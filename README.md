@@ -10,10 +10,10 @@
 my-tools/
 ├── clitool/              # CLI 工具
 │   ├── markdown2pdf/     # Markdown 转 PDF
-│   └── ssh_config_manage/# SSH 配置管理
-├── mcptool/              # MCP 工具
-│   └── cmd/sshtool/      # SSH MCP Server
-└── bin/                  # 编译输出
+│   ├── ssh_config_manage/# SSH 配置管理
+│   └── viewcsv/          # CSV 查看器
+└── mcptool/              # MCP 工具
+    └── cmd/sshtool/      # SSH MCP Server
 ```
 
 ## 工具说明
@@ -37,6 +37,21 @@ SSH 配置文件管理 TUI 工具，基于 Bubble Tea 构建。方便查看、�
 ```bash
 # 使用
 sshman -file ~/.ssh/config
+```
+
+### viewcsv
+
+CSV 文件查看工具，以表格形式展示 CSV 内容，支持自定义分隔符和中文对齐。
+
+```bash
+# 使用
+viewcsv -i input.csv
+
+# 指定分隔符
+viewcsv -i input.tsv -d "	"
+
+# 无表头模式
+viewcsv -i input.csv --no-header
 ```
 
 ### sshtool (MCP Server)

@@ -10,10 +10,10 @@ A collection of personal CLI and MCP tools for daily development and operations.
 my-tools/
 ├── clitool/              # CLI tools
 │   ├── markdown2pdf/     # Markdown to PDF converter
-│   └── ssh_config_manage/# SSH config manager
-├── mcptool/              # MCP tools
-│   └── cmd/sshtool/      # SSH MCP Server
-└── bin/                  # Build output
+│   ├── ssh_config_manage/# SSH config manager
+│   └── viewcsv/          # CSV viewer
+└── mcptool/              # MCP tools
+    └── cmd/sshtool/      # SSH MCP Server
 ```
 
 ## Tools
@@ -37,6 +37,21 @@ TUI tool for managing SSH config files, built with Bubble Tea. Convenient for vi
 ```bash
 # Usage
 sshman -file ~/.ssh/config
+```
+
+### viewcsv
+
+CSV file viewer that displays content in table format with custom delimiter support and Chinese character alignment.
+
+```bash
+# Usage
+viewcsv -i input.csv
+
+# Custom delimiter
+viewcsv -i input.tsv -d "	"
+
+# No header mode
+viewcsv -i input.csv --no-header
 ```
 
 ### sshtool (MCP Server)
