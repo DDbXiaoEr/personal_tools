@@ -7,7 +7,7 @@ all: build
 
 build: build-clitool build-mcptool
 
-build-clitool: build-markdown2pdf build-sshman
+build-clitool: build-markdown2pdf build-sshman build-viewcsv build-occonfig
 
 build-mcptool: build-sshtool
 
@@ -19,13 +19,21 @@ build-sshman:
 	@echo "Building sshman..."
 	cd clitool/ssh_config_manage && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/sshman .
 
+build-viewcsv:
+	@echo "Building viewcsv..."
+	cd clitool/viewcsv && go build -o ../../$(BIN_DIR)/clitool/viewcsv .
+
+build-occonfig:
+	@echo "Building occonfig..."
+	cd clitool/opencode_config && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/occonfig .
+
 build-sshtool:
 	@echo "Building sshtool..."
 	cd mcptool && go build -o ../$(BIN_DIR)/mcptool/sshtool ./cmd/sshtool/
 
 linux: linux-clitool linux-mcptool
 
-linux-clitool: linux-markdown2pdf linux-sshman
+linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv linux-occonfig
 
 linux-mcptool: linux-sshtool
 
@@ -36,6 +44,14 @@ linux-markdown2pdf:
 linux-sshman:
 	@echo "Building sshman for Linux..."
 	cd clitool/ssh_config_manage && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/sshman-linux .
+
+linux-viewcsv:
+	@echo "Building viewcsv for Linux..."
+	cd clitool/viewcsv && GOOS=linux GOARCH=amd64 go build -o ../../$(BIN_DIR)/clitool/viewcsv-linux .
+
+linux-occonfig:
+	@echo "Building occonfig for Linux..."
+	cd clitool/opencode_config && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/occonfig-linux .
 
 linux-sshtool:
 	@echo "Building sshtool for Linux..."

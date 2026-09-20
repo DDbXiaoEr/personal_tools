@@ -11,7 +11,8 @@ my-tools/
 ├── clitool/              # CLI tools
 │   ├── markdown2pdf/     # Markdown to PDF converter
 │   ├── ssh_config_manage/# SSH config manager
-│   └── viewcsv/          # CSV viewer
+│   ├── viewcsv/          # CSV viewer
+│   └── opencode_config/  # opencode config manager TUI
 └── mcptool/              # MCP tools
     └── cmd/sshtool/      # SSH MCP Server
 ```
@@ -54,6 +55,44 @@ viewcsv -i input.tsv -d "	"
 viewcsv -i input.csv --no-header
 ```
 
+### occonfig
+
+TUI tool for managing opencode configuration, built with Bubble Tea. Manage the global or project `opencode.json` while preserving comments, key order, and untouched fields.
+
+**Features:**
+- **Provider**: add/edit/delete custom providers (`id` / `name` / `npm` / `options.baseURL` / `options.apiKey`). Keys not exposed in the form (e.g. `models`, `blacklist`) are preserved as-is.
+- **MCP**: manage both `local` and `remote` servers covering `command`, `environment`, `cwd`, `url`, `headers`, `oauth`, `timeout`, `enabled`; press space to toggle enable/disable from the list.
+- **Skills**: read-only browse of global `~/.config/opencode/skills/*/SKILL.md`, validating frontmatter (`name` / `description`) and viewing the full content.
+- **Config source**: defaults to the global config; press `o` to switch to a project `opencode.json` found by walking up from the current directory.
+
+```bash
+# Usage (defaults to ~/.config/opencode/opencode.json)
+occonfig
+
+# Custom config and skills directory
+occonfig -config /path/to/opencode.json -skills-dir ~/.config/opencode/skills
+```
+
+**Keybindings:**
+
+| Key | Action |
+|-----|--------|
+| `1` / `2` / `3` | Switch Provider / MCP / Skills tabs |
+| `↑` `↓` / `j` `k` | Move cursor |
+| `a` | Add |
+| `enter` / `e` | Edit (view full text on Skills tab) |
+| `d` | Delete (with confirmation) |
+| `space` | Enable / disable MCP |
+| `s` | Save to file |
+| `r` | Reload from file |
+| `o` | Switch global / project config source |
+| `?` | Help |
+| `q` | Quit |
+
+**MCP local command:** in the form, Tab to the "浏览可执行文件" button and press `Enter` (or press `ctrl+f`) to open a file picker; the selected executable path is auto-filled and existing argument lines are kept.
+
+> Saving writes a `<config>.bak` backup and normalizes the file to tab-indented JSONC (opencode-compatible).
+
 ### sshtool (MCP Server)
 
 SSH remote command execution MCP Server with password and key authentication. Built-in high-risk command blocking. Can be integrated into AI assistants or automation tools via MCP protocol for secure remote server management.
@@ -87,5 +126,5 @@ make clean
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.25+ (required by occonfig)
 - Chrome/Chromium (required by markdown2pdf)
