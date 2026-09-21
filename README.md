@@ -12,7 +12,8 @@ my-tools/
 │   ├── markdown2pdf/     # Markdown 转 PDF
 │   ├── ssh_config_manage/# SSH 配置管理
 │   ├── viewcsv/          # CSV 查看器
-│   └── opencode_config/  # opencode 配置管理 TUI
+│   ├── opencode_config/  # opencode 配置管理 TUI
+│   └── shell_rc_manage/  # shell 别名 / 环境变量 / 函数 TUI
 └── mcptool/              # MCP 工具
     └── cmd/sshtool/      # SSH MCP Server
 ```
@@ -54,6 +55,56 @@ viewcsv -i input.tsv -d "	"
 # 无表头模式
 viewcsv -i input.csv --no-header
 ```
+
+### shellman
+
+Shell 别名、环境变量、自定义函数管理 TUI，基于 Bubble Tea 构建。读写家目录下的 `.{shell}_{alias,env,functions}`，按分类注释分组保存。不修改 `~/.zshrc` / `~/.bashrc`，请自行 source。
+
+**文件约定：**
+
+| 文件 | 内容 |
+|------|------|
+| `~/.zsh_alias` / `~/.bash_alias` | `alias name='cmd'` |
+| `~/.zsh_env` / `~/.bash_env` | `export` / 赋值 / snippet |
+| `~/.zsh_functions` / `~/.bash_functions` | `name() { ... }` |
+
+保存时同类条目写在同一分类下：
+
+```sh
+# ===== Docker =====
+alias dim='docker images'
+alias dps='docker ps'
+```
+
+Env 支持三种形态：`export KEY=value`、`KEY=value`、以及 nvm/bun 这类多行 snippet。
+
+```bash
+# 使用（默认当前 $SHELL，目录 $HOME）
+shellman
+
+# 指定 shell 与目录
+shellman -shell bash
+shellman -dir /custom
+```
+
+**快捷键：**
+
+| 按键 | 说明 |
+|------|------|
+| `1` / `2` / `3` | 切换 Alias / Env / Functions |
+| `↑` `↓` / `j` `k` | 移动光标 |
+| `a` | 新增 |
+| `enter` / `e` | 编辑 |
+| `d` | 删除（需确认） |
+| `s` | 保存当前标签对应文件 |
+| `r` | 从文件重载 |
+| `o` | 切换 zsh / bash |
+| `?` | 帮助 |
+| `q` | 退出 |
+
+表单中 `tab` 切字段，`ctrl+s` 应用，`esc` 取消。函数体和 snippet 用 textarea 编辑。
+
+> 保存时会生成 `<文件>.bak` 备份。现有 `~/.zsh_aliases` 不会被读取，需要的话在 rc 里改成 `source ~/.zsh_alias` 等。
 
 ### occonfig
 

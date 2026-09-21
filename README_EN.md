@@ -12,7 +12,8 @@ my-tools/
 │   ├── markdown2pdf/     # Markdown to PDF converter
 │   ├── ssh_config_manage/# SSH config manager
 │   ├── viewcsv/          # CSV viewer
-│   └── opencode_config/  # opencode config manager TUI
+│   ├── opencode_config/  # opencode config manager TUI
+│   └── shell_rc_manage/  # shell alias / env / function TUI
 └── mcptool/              # MCP tools
     └── cmd/sshtool/      # SSH MCP Server
 ```
@@ -54,6 +55,56 @@ viewcsv -i input.tsv -d "	"
 # No header mode
 viewcsv -i input.csv --no-header
 ```
+
+### shellman
+
+TUI for managing shell aliases, environment variables, and custom functions, built with Bubble Tea. Reads/writes `.{shell}_{alias,env,functions}` in the home directory, grouped by category comments on save. Does not modify `~/.zshrc` / `~/.bashrc`; source those files yourself.
+
+**File layout:**
+
+| File | Content |
+|------|---------|
+| `~/.zsh_alias` / `~/.bash_alias` | `alias name='cmd'` |
+| `~/.zsh_env` / `~/.bash_env` | `export` / assignment / snippet |
+| `~/.zsh_functions` / `~/.bash_functions` | `name() { ... }` |
+
+Items in the same category are written together:
+
+```sh
+# ===== Docker =====
+alias dim='docker images'
+alias dps='docker ps'
+```
+
+Env entries support `export KEY=value`, `KEY=value`, and multi-line snippets (nvm/bun loaders, etc.).
+
+```bash
+# Usage (defaults to current $SHELL and $HOME)
+shellman
+
+# Override shell and directory
+shellman -shell bash
+shellman -dir /custom
+```
+
+**Keybindings:**
+
+| Key | Action |
+|-----|--------|
+| `1` / `2` / `3` | Switch Alias / Env / Functions |
+| `↑` `↓` / `j` `k` | Move cursor |
+| `a` | Add |
+| `enter` / `e` | Edit |
+| `d` | Delete (with confirmation) |
+| `s` | Save the current tab's file |
+| `r` | Reload from disk |
+| `o` | Switch zsh / bash |
+| `?` | Help |
+| `q` | Quit |
+
+In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Function bodies and snippets use a textarea.
+
+> Saving writes a `<file>.bak` backup. Existing `~/.zsh_aliases` is not read; point your rc at `source ~/.zsh_alias` if you want to migrate.
 
 ### occonfig
 
