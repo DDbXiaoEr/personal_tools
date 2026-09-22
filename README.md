@@ -47,13 +47,16 @@ CSV 文件查看工具，以表格形式展示 CSV 内容，支持自定义分�
 
 ```bash
 # 使用
-viewcsv -i input.csv
+viewcsv input.csv
+
+# 读取当前目录所有 CSV
+viewcsv *.csv
 
 # 指定分隔符
-viewcsv -i input.tsv -d "	"
+viewcsv input.tsv -d "	"
 
 # 无表头模式
-viewcsv -i input.csv --no-header
+viewcsv input.csv --no-header
 ```
 
 ### shellman

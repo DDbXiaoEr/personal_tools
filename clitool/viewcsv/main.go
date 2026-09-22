@@ -5,29 +5,75 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
 
 func main() {
-	input := flag.String("i", "", "input CSV file")
 	delimiter := flag.String("d", ",", "delimiter character")
 	noHeader := flag.Bool("no-header", false, "treat first row as data, not header")
 	flag.Parse()
 
-	if *input == "" {
-		if flag.NArg() > 0 {
-			*input = flag.Arg(0)
-		} else {
-			fmt.Fprintln(os.Stderr, "usage: viewcsv -i input.csv [-d delimiter] [--no-header]")
-			os.Exit(1)
-		}
+	patterns := flag.Args()
+	if len(patterns) == 0 {
+		fmt.Fprintln(os.Stderr, "usage: viewcsv file.csv [file.csv ...] [-d delimiter] [--no-header]")
+		fmt.Fprintln(os.Stderr, "       viewcsv *.csv")
+		os.Exit(1)
 	}
 
-	if err := viewCSV(*input, *delimiter, *noHeader); err != nil {
+	files, err := expandFiles(patterns)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+
+	for i, filename := range files {
+		if len(files) > 1 {
+			if i > 0 {
+				fmt.Println()
+			}
+			fmt.Println("=== " + filename + " ===")
+		}
+		if err := viewCSV(filename, *delimiter, *noHeader); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", filename+":", err)
+			os.Exit(1)
+		}
+	}
+}
+
+func expandFiles(patterns []string) ([]string, error) {
+	seen := make(map[string]bool)
+	var files []string
+	for _, pattern := range patterns {
+		if hasGlob(pattern) {
+			matches, err := filepath.Glob(pattern)
+			if err != nil {
+				return nil, err
+			}
+			if len(matches) == 0 {
+				return nil, fmt.Errorf("no files matching %q", pattern)
+			}
+			sort.Strings(matches)
+			for _, m := range matches {
+				if !seen[m] {
+					seen[m] = true
+					files = append(files, m)
+				}
+			}
+			continue
+		}
+		if !seen[pattern] {
+			seen[pattern] = true
+			files = append(files, pattern)
+		}
+	}
+	return files, nil
+}
+
+func hasGlob(s string) bool {
+	return strings.ContainsAny(s, "*?[")
 }
 
 func viewCSV(filename, delimiter string, noHeader bool) error {

@@ -47,13 +47,16 @@ CSV file viewer that displays content in table format with custom delimiter supp
 
 ```bash
 # Usage
-viewcsv -i input.csv
+viewcsv input.csv
+
+# Read all CSV files in the current directory
+viewcsv *.csv
 
 # Custom delimiter
-viewcsv -i input.tsv -d "	"
+viewcsv input.tsv -d "	"
 
 # No header mode
-viewcsv -i input.csv --no-header
+viewcsv input.csv --no-header
 ```
 
 ### shellman
