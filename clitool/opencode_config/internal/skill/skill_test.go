@@ -1,6 +1,9 @@
 package skill
 
 import (
+	"archive/zip"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -100,5 +103,92 @@ func TestScanMissingDir(t *testing.T) {
 	}
 	if skills != nil {
 		t.Errorf("expected nil, got %v", skills)
+	}
+}
+
+func writeZip(t *testing.T, path string, files map[string]string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	w := zip.NewWriter(f)
+	for name, content := range files {
+		fw, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fw.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstallAndRemoveLocalZip(t *testing.T) {
+	root := t.TempDir()
+	zipPath := filepath.Join(root, "skill.zip")
+	writeZip(t, zipPath, map[string]string{
+		"repo-main/SKILL.md": "---\nname: demo-skill\ndescription: d\n---\n# hi\n",
+		"repo-main/notes.md": "extra",
+	})
+	skillsDir := filepath.Join(root, "skills")
+	if err := Install(skillsDir, "demo-skill", zipPath); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(skillsDir, "demo-skill", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "# hi") {
+		t.Fatalf("SKILL.md content = %s", data)
+	}
+	if _, err := os.Stat(filepath.Join(skillsDir, "demo-skill", "notes.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Install(skillsDir, "demo-skill", zipPath); err == nil {
+		t.Fatal("expected duplicate install to fail")
+	}
+	if err := Remove(skillsDir, "demo-skill"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(skillsDir, "demo-skill")); !os.IsNotExist(err) {
+		t.Fatalf("dir still exists: %v", err)
+	}
+}
+
+func TestInstallHTTPZip(t *testing.T) {
+	root := t.TempDir()
+	zipPath := filepath.Join(root, "s.zip")
+	writeZip(t, zipPath, map[string]string{
+		"SKILL.md": "---\nname: http-skill\ndescription: d\n---\nbody\n",
+	})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, zipPath)
+	}))
+	defer srv.Close()
+
+	skillsDir := filepath.Join(root, "skills")
+	if err := Install(skillsDir, "http-skill", srv.URL+"/s.zip"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(skillsDir, "http-skill", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstallRejectsBadName(t *testing.T) {
+	err := Install(t.TempDir(), "BadName", "x.zip")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestRemoveRejectsPathEscape(t *testing.T) {
+	if err := Remove(t.TempDir(), "../etc"); err == nil {
+		t.Fatal("expected error")
 	}
 }

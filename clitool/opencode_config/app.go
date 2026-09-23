@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -34,6 +35,7 @@ const (
 	modeSource
 	modeSkillView
 	modeFilePick
+	modeVariantList
 )
 
 type pendingKind int
@@ -42,8 +44,15 @@ const (
 	pendingNone pendingKind = iota
 	pendingDeleteProvider
 	pendingDeleteMCP
+	pendingDeleteVariant
+	pendingDeleteSkill
 	pendingQuit
 )
+
+type skillInstalledMsg struct {
+	name string
+	err  error
+}
 
 var providerIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
@@ -63,6 +72,15 @@ const (
 )
 
 const actionPickCommand = "pick-command"
+
+const (
+	varFieldModel = iota
+	varFieldID
+	varFieldDisabled
+	varFieldOptions
+)
+
+var modelIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]*$`)
 
 type model struct {
 	cfg       *opencode.Config
@@ -85,6 +103,12 @@ type model struct {
 	editingMCP         string
 	editingMCPRaw      []byte
 
+	variantProvID   string
+	variantCursor   int
+	editingVarModel string
+	editingVarID    string
+	formKind        string
+
 	skills []skill.Skill
 	sview  viewport.Model
 
@@ -95,9 +119,10 @@ type model struct {
 	sources   []string
 	sourceCur int
 
-	status   string
-	isErr    bool
-	showHelp bool
+	status     string
+	isErr      bool
+	showHelp   bool
+	installing bool
 }
 
 func newModel(cfg *opencode.Config, skillsDir string) model {
@@ -159,6 +184,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.filePicker.SetHeight(fh)
 		return m, nil
+	case skillInstalledMsg:
+		m.installing = false
+		if msg.err != nil {
+			m.setErr("安装技能失败: " + msg.err.Error())
+			return m, nil
+		}
+		m.reloadSkills()
+		for i, s := range m.skills {
+			if s.Dir == msg.name || s.Name == msg.name {
+				m.skillCursor = i
+				break
+			}
+		}
+		m.setOK("已安装 " + msg.name)
+		return m, nil
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeForm:
@@ -171,6 +211,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSource(msg)
 		case modeSkillView:
 			return m.updateSkillView(msg)
+		case modeVariantList:
+			return m.updateVariantList(msg)
 		default:
 			return m.updateList(msg)
 		}
@@ -224,6 +266,8 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.startDelete()
 	case " ":
 		m.toggleEnabled()
+	case "v":
+		m.openVariantList()
 	}
 	return m, nil
 }
@@ -239,7 +283,12 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		m.mode = modeList
+		if m.formKind == "variant" {
+			m.mode = modeVariantList
+		} else {
+			m.mode = modeList
+		}
+		m.formKind = ""
 		return m, nil
 	case "tab":
 		m.form.next()
@@ -322,24 +371,34 @@ func (m *model) applyPickedFile(path string) {
 
 func (m model) submitForm() (tea.Model, tea.Cmd) {
 	var err error
-	switch m.tab {
-	case tabProviders:
-		err = m.applyProviderForm()
-	case tabMCP:
+	switch m.formKind {
+	case "variant":
+		err = m.applyVariantForm()
+	case "mcp":
 		err = m.applyMCPForm()
+	case "skill":
+		return m.applySkillForm()
+	default:
+		err = m.applyProviderForm()
 	}
 	if err != nil {
 		m.setErr(err.Error())
 		return m, nil
 	}
-	m.mode = modeList
+	if m.formKind == "variant" {
+		m.mode = modeVariantList
+	} else {
+		m.mode = modeList
+	}
+	m.formKind = ""
 	m.setOK("已更新，按 s 保存到文件")
 	return m, nil
 }
 
 func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	kind := m.pending
 	if msg.String() == "y" || msg.String() == "Y" {
-		switch m.pending {
+		switch kind {
 		case pendingDeleteProvider:
 			ids := m.cfg.ProviderIDs()
 			if m.provCursor < len(ids) {
@@ -352,12 +411,20 @@ func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cfg.DeleteMCP(ids[m.mcpCursor])
 				m.setOK("已删除，按 s 保存")
 			}
+		case pendingDeleteVariant:
+			m.deleteCurrentVariant()
+		case pendingDeleteSkill:
+			m.deleteCurrentSkill()
 		case pendingQuit:
 			return m, tea.Quit
 		}
 	}
 	m.pending = pendingNone
-	m.mode = modeList
+	if kind == pendingDeleteVariant || (kind == pendingQuit && m.variantProvID != "") {
+		m.mode = modeVariantList
+	} else {
+		m.mode = modeList
+	}
 	return m, nil
 }
 
@@ -465,12 +532,22 @@ func (m *model) startAdd() {
 	case tabProviders:
 		m.editingProvider = ""
 		m.editingProviderRaw = nil
+		m.formKind = "provider"
 		m.buildProviderForm()
 		m.mode = modeForm
 	case tabMCP:
 		m.editingMCP = ""
 		m.editingMCPRaw = nil
+		m.formKind = "mcp"
 		m.buildMCPForm()
+		m.mode = modeForm
+	case tabSkills:
+		if m.installing {
+			m.setErr("正在安装技能，请稍候")
+			return
+		}
+		m.formKind = "skill"
+		m.buildSkillForm()
 		m.mode = modeForm
 	}
 }
@@ -485,6 +562,7 @@ func (m *model) startEdit() {
 		id := ids[m.provCursor]
 		m.editingProvider = id
 		m.editingProviderRaw = m.cfg.Provider(id)
+		m.formKind = "provider"
 		m.buildProviderForm()
 		m.mode = modeForm
 	case tabMCP:
@@ -495,6 +573,7 @@ func (m *model) startEdit() {
 		name := ids[m.mcpCursor]
 		m.editingMCP = name
 		m.editingMCPRaw = m.cfg.MCP(name)
+		m.formKind = "mcp"
 		m.buildMCPForm()
 		m.mode = modeForm
 	case tabSkills:
@@ -512,6 +591,11 @@ func (m *model) startDelete() {
 	case tabMCP:
 		if len(m.cfg.MCPIDs()) > 0 {
 			m.pending = pendingDeleteMCP
+			m.mode = modeConfirm
+		}
+	case tabSkills:
+		if len(m.skills) > 0 {
+			m.pending = pendingDeleteSkill
 			m.mode = modeConfirm
 		}
 	}
@@ -595,6 +679,271 @@ func (m *model) applyProviderForm() error {
 	return nil
 }
 
+func (m *model) currentProvider() (*opencode.Provider, string, bool) {
+	id := m.variantProvID
+	if id == "" {
+		ids := m.cfg.ProviderIDs()
+		if m.provCursor >= len(ids) {
+			return nil, "", false
+		}
+		id = ids[m.provCursor]
+	}
+	return opencode.ParseProvider(id, m.cfg.Provider(id)), id, true
+}
+
+func (m *model) writeProvider(id string, p *opencode.Provider) error {
+	raw, err := p.Encode()
+	if err != nil {
+		return err
+	}
+	m.cfg.SetProvider(id, raw)
+	return nil
+}
+
+func (m *model) openVariantList() {
+	if m.tab != tabProviders {
+		return
+	}
+	ids := m.cfg.ProviderIDs()
+	if len(ids) == 0 {
+		m.setErr("请先新增 Provider")
+		return
+	}
+	m.variantProvID = ids[m.provCursor]
+	m.variantCursor = 0
+	m.mode = modeVariantList
+}
+
+func (m model) updateVariantList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		if m.cfg.Dirty() {
+			m.pending = pendingQuit
+			m.mode = modeConfirm
+			return m, nil
+		}
+		return m, tea.Quit
+	case "esc":
+		m.variantProvID = ""
+		m.mode = modeList
+	case "up", "k":
+		m.moveVariantCursor(-1)
+	case "down", "j":
+		m.moveVariantCursor(1)
+	case "g", "home":
+		m.setVariantCursor(0)
+	case "G", "end":
+		p, _, ok := m.currentProvider()
+		if ok {
+			m.setVariantCursor(p.NumVariants() - 1)
+		}
+	case "a":
+		m.startAddVariant()
+	case "enter", "e":
+		m.startEditVariant()
+	case "d", "delete", "backspace":
+		p, _, ok := m.currentProvider()
+		if ok && p.NumVariants() > 0 {
+			m.pending = pendingDeleteVariant
+			m.mode = modeConfirm
+		}
+	case " ":
+		m.toggleVariant()
+	case "s":
+		m.save()
+	case "r":
+		m.reload()
+		if !m.cfg.Dirty() {
+			m.mode = modeList
+			m.variantProvID = ""
+		}
+	case "?":
+		m.showHelp = !m.showHelp
+	}
+	return m, nil
+}
+
+func (m *model) moveVariantCursor(d int) {
+	p, _, ok := m.currentProvider()
+	if !ok {
+		return
+	}
+	n := p.NumVariants()
+	if n == 0 {
+		return
+	}
+	m.variantCursor = clamp(m.variantCursor+d, 0, n-1)
+}
+
+func (m *model) setVariantCursor(v int) {
+	p, _, ok := m.currentProvider()
+	if !ok {
+		return
+	}
+	n := p.NumVariants()
+	if n == 0 {
+		return
+	}
+	m.variantCursor = clamp(v, 0, n-1)
+}
+
+func (m *model) currentVariantRef() (opencode.VariantRef, bool) {
+	p, _, ok := m.currentProvider()
+	if !ok {
+		return opencode.VariantRef{}, false
+	}
+	refs := p.VariantRefs()
+	if m.variantCursor < 0 || m.variantCursor >= len(refs) {
+		return opencode.VariantRef{}, false
+	}
+	return refs[m.variantCursor], true
+}
+
+func (m *model) startAddVariant() {
+	m.editingVarModel = ""
+	m.editingVarID = ""
+	m.formKind = "variant"
+	m.buildVariantForm(nil)
+	m.mode = modeForm
+}
+
+func (m *model) startEditVariant() {
+	ref, ok := m.currentVariantRef()
+	if !ok {
+		return
+	}
+	m.editingVarModel = ref.ModelID
+	m.editingVarID = ref.Variant.ID
+	m.formKind = "variant"
+	m.buildVariantForm(ref.Variant)
+	m.mode = modeForm
+}
+
+func (m *model) buildVariantForm(v *opencode.Variant) {
+	title := "新增 Variant"
+	if m.editingVarID != "" {
+		title = "编辑 Variant: " + m.editingVarModel + "/" + m.editingVarID
+	}
+	modelField := newText("model", "gpt-5")
+	idField := newText("id", "high")
+	disabled := false
+	opts := ""
+	if v != nil {
+		modelField.setText(m.editingVarModel)
+		idField.setText(v.ID)
+		disabled = v.Disabled
+		opts = kvToLines(v.Options, "=")
+	}
+	if m.editingVarID != "" {
+		modelField.readOnly = true
+		idField.readOnly = true
+	}
+	f := &form{title: title}
+	f.add(
+		modelField,
+		idField,
+		newBool("disabled", disabled),
+		newArea("options (KEY=value)", "reasoningEffort=high\ntextVerbosity=low", 6),
+	)
+	f.fields[varFieldOptions].setArea(opts)
+	f.focusFirst()
+	m.form = *f
+}
+
+func (m *model) applyVariantForm() error {
+	p, id, ok := m.currentProvider()
+	if !ok {
+		return fmt.Errorf("未选中 Provider")
+	}
+	modelID := m.form.fields[varFieldModel].text()
+	varID := m.form.fields[varFieldID].text()
+	if modelID == "" {
+		return fmt.Errorf("model 不能为空")
+	}
+	if varID == "" {
+		return fmt.Errorf("variant id 不能为空")
+	}
+	if !modelIDRe.MatchString(modelID) {
+		return fmt.Errorf("model id 只能包含字母、数字、. _ : / -，且以字母或数字开头")
+	}
+	if !modelIDRe.MatchString(varID) {
+		return fmt.Errorf("variant id 只能包含字母、数字、. _ : / -，且以字母或数字开头")
+	}
+	if m.editingVarID == "" {
+		if p.FindVariant(modelID, varID) != nil {
+			return fmt.Errorf("variant %s/%s 已存在", modelID, varID)
+		}
+	}
+	v := &opencode.Variant{ID: varID}
+	if m.editingVarID != "" {
+		if existing := p.FindVariant(m.editingVarModel, m.editingVarID); existing != nil {
+			v = existing.Clone()
+			v.ID = varID
+		}
+	}
+	v.Disabled = m.form.fields[varFieldDisabled].boolean
+	v.Options = parseKV(m.form.fields[varFieldOptions].areaText(), "=")
+	p.SetVariant(modelID, v)
+	if err := m.writeProvider(id, p); err != nil {
+		return err
+	}
+	refs := p.VariantRefs()
+	for i, ref := range refs {
+		if ref.ModelID == modelID && ref.Variant.ID == varID {
+			m.variantCursor = i
+			break
+		}
+	}
+	return nil
+}
+
+func (m *model) deleteCurrentVariant() {
+	ref, ok := m.currentVariantRef()
+	if !ok {
+		return
+	}
+	p, id, ok := m.currentProvider()
+	if !ok {
+		return
+	}
+	p.DeleteVariant(ref.ModelID, ref.Variant.ID)
+	if err := m.writeProvider(id, p); err != nil {
+		m.setErr(err.Error())
+		return
+	}
+	n := p.NumVariants()
+	if m.variantCursor >= n {
+		m.variantCursor = n - 1
+	}
+	if m.variantCursor < 0 {
+		m.variantCursor = 0
+	}
+	m.setOK(fmt.Sprintf("已删除 %s/%s，按 s 保存", ref.ModelID, ref.Variant.ID))
+}
+
+func (m *model) toggleVariant() {
+	ref, ok := m.currentVariantRef()
+	if !ok {
+		return
+	}
+	p, id, ok := m.currentProvider()
+	if !ok {
+		return
+	}
+	if !p.ToggleVariantDisabled(ref.ModelID, ref.Variant.ID) {
+		return
+	}
+	if err := m.writeProvider(id, p); err != nil {
+		m.setErr(err.Error())
+		return
+	}
+	state := "已启用"
+	if p.FindVariant(ref.ModelID, ref.Variant.ID).Disabled {
+		state = "已禁用"
+	}
+	m.setOK(fmt.Sprintf("%s/%s %s，按 s 保存", ref.ModelID, ref.Variant.ID, state))
+}
+
 func (m *model) buildMCPForm() {
 	mc := opencode.ParseMCP(m.editingMCP, m.editingMCPRaw)
 	title := "新增 MCP Server"
@@ -675,6 +1024,92 @@ func (m *model) applyMCPForm() error {
 	return nil
 }
 
+func (m *model) buildSkillForm() {
+	f := &form{title: "新增 Skill"}
+	f.add(
+		newText("目录名", "my-skill"),
+		newText("zip URI", "https://example.com/skill.zip"),
+	)
+	f.focusFirst()
+	m.form = *f
+}
+
+func (m model) applySkillForm() (tea.Model, tea.Cmd) {
+	name := m.form.fields[0].text()
+	uri := m.form.fields[1].text()
+	if name == "" {
+		name = skillNameFromURI(uri)
+	}
+	if name == "" {
+		m.setErr("目录名不能为空")
+		return m, nil
+	}
+	if !skill.ValidName(name) {
+		m.setErr("目录名只能是小写字母、数字和连字符")
+		return m, nil
+	}
+	if uri == "" {
+		m.setErr("URI 不能为空")
+		return m, nil
+	}
+	dir := m.skillsDir
+	m.formKind = ""
+	m.mode = modeList
+	m.installing = true
+	m.setOK("正在安装 " + name + " …")
+	return m, func() tea.Msg {
+		err := skill.Install(dir, name, uri)
+		return skillInstalledMsg{name: name, err: err}
+	}
+}
+
+func skillNameFromURI(uri string) string {
+	uri = strings.TrimSpace(uri)
+	if uri == "" {
+		return ""
+	}
+	base := filepath.Base(uri)
+	if i := strings.IndexByte(base, '?'); i >= 0 {
+		base = base[:i]
+	}
+	base = strings.TrimSuffix(base, ".zip")
+	base = strings.ToLower(base)
+	var b strings.Builder
+	prevDash := true
+	for _, r := range base {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevDash = false
+		case unicode.IsLetter(r) || r == '-' || r == '_' || r == '.':
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func (m *model) deleteCurrentSkill() {
+	if m.skillCursor < 0 || m.skillCursor >= len(m.skills) {
+		return
+	}
+	s := m.skills[m.skillCursor]
+	if err := skill.Remove(m.skillsDir, s.Dir); err != nil {
+		m.setErr("删除失败: " + err.Error())
+		return
+	}
+	m.reloadSkills()
+	if m.skillCursor >= len(m.skills) {
+		m.skillCursor = len(m.skills) - 1
+	}
+	if m.skillCursor < 0 {
+		m.skillCursor = 0
+	}
+	m.setOK("已删除 " + s.Dir)
+}
+
 func (m *model) openSkillView() {
 	if len(m.skills) == 0 {
 		return
@@ -748,13 +1183,19 @@ func (m model) View() string {
 	case modeForm:
 		return boxStyle.Render(m.form.View())
 	case modeConfirm:
-		return m.listView() + "\n\n" + errStyle.Render(m.confirmText()+" (y/n)")
+		base := m.listView()
+		if m.variantProvID != "" {
+			base = m.variantListView()
+		}
+		return base + "\n\n" + errStyle.Render(m.confirmText()+" (y/n)")
 	case modeSource:
 		return m.sourceView()
 	case modeSkillView:
 		return m.skillView()
 	case modeFilePick:
 		return m.filePickView()
+	case modeVariantList:
+		return m.variantListView()
 	default:
 		return m.listView()
 	}
@@ -781,6 +1222,16 @@ func (m model) confirmText() string {
 			return fmt.Sprintf("确定删除 MCP %q ?", ids[m.mcpCursor])
 		}
 		return "确定删除该 MCP ?"
+	case pendingDeleteVariant:
+		if ref, ok := m.currentVariantRef(); ok {
+			return fmt.Sprintf("确定删除 Variant %s/%s ?", ref.ModelID, ref.Variant.ID)
+		}
+		return "确定删除该 Variant ?"
+	case pendingDeleteSkill:
+		if m.skillCursor < len(m.skills) {
+			return fmt.Sprintf("确定删除技能 %q ?", m.skills[m.skillCursor].Dir)
+		}
+		return "确定删除该技能 ?"
 	case pendingQuit:
 		return "有未保存的修改，确定退出 ?"
 	}
@@ -807,6 +1258,82 @@ func (m model) listView() string {
 		b.WriteString(m.helpView())
 	}
 	return b.String()
+}
+
+func (m model) variantListView() string {
+	var b strings.Builder
+	b.WriteString(m.headerView())
+	b.WriteString("\n")
+	b.WriteString(titleStyle.Render("Variants: " + m.variantProvID))
+	b.WriteString("\n\n")
+	b.WriteString(m.variantBody())
+	b.WriteString("\n")
+	if m.status != "" {
+		if m.isErr {
+			b.WriteString(errStyle.Render(m.status))
+		} else {
+			b.WriteString(okStyle.Render(m.status))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString(helpStyle.Render("a 新增 · enter/e 编辑 · d 删除 · space 禁用 · s 保存 · esc 返回 · q 退出"))
+	if m.showHelp {
+		b.WriteString("\n\n")
+		b.WriteString(m.helpView())
+	}
+	return b.String()
+}
+
+func (m model) variantBody() string {
+	p, _, ok := m.currentProvider()
+	if !ok {
+		return dimStyle.Render("未选中 Provider。") + "\n"
+	}
+	refs := p.VariantRefs()
+	if len(refs) == 0 {
+		return dimStyle.Render("暂无 Variant，按 'a' 新增。") + "\n"
+	}
+	start, end := window(len(refs), m.variantCursor, m.listRows())
+	var b strings.Builder
+	lastModel := ""
+	if start > 0 {
+		lastModel = refs[start-1].ModelID
+	}
+	for i := start; i < end; i++ {
+		ref := refs[i]
+		if ref.ModelID != lastModel {
+			b.WriteString(catStyle.Render("── " + ref.ModelID + " ──"))
+			b.WriteString("\n")
+			lastModel = ref.ModelID
+		}
+		state := "on "
+		if ref.Variant.Disabled {
+			state = "off"
+		}
+		plain := fmt.Sprintf("[%s] %-16s %s", state, ref.Variant.ID, variantOptionsSummary(ref.Variant))
+		if i == m.variantCursor {
+			b.WriteString(selectedStyle.Render("› " + plain))
+		} else {
+			b.WriteString("  " + plain)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func variantOptionsSummary(v *opencode.Variant) string {
+	if len(v.Options) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(v.Options))
+	for _, kv := range v.Options {
+		if kv.Value == "" {
+			parts = append(parts, kv.Key)
+			continue
+		}
+		parts = append(parts, kv.Key+"="+truncate(kv.Value, 24))
+	}
+	return strings.Join(parts, " · ")
 }
 
 func (m model) headerView() string {
@@ -870,6 +1397,9 @@ func (m model) providersBody() string {
 		if keys := p.ExtraKeys(); len(keys) > 0 {
 			extra = dimStyle.Render(fmt.Sprintf("  [保留 %d 个键]", len(keys)))
 		}
+		if n := p.NumVariants(); n > 0 {
+			detail = strings.TrimSpace(detail + fmt.Sprintf(" · %d variants", n))
+		}
 		plain := fmt.Sprintf("%-22s %s", id, detail)
 		if i == m.provCursor {
 			b.WriteString(selectedStyle.Render("› "+plain) + extra)
@@ -914,7 +1444,7 @@ func (m model) mcpBody() string {
 
 func (m model) skillsBody() string {
 	if len(m.skills) == 0 {
-		return dimStyle.Render("在 "+m.skillsDir+" 下没有找到技能。") + "\n"
+		return dimStyle.Render("在 "+m.skillsDir+" 下没有找到技能，按 'a' 从 zip URI 安装。") + "\n"
 	}
 	start, end := window(len(m.skills), m.skillCursor, m.listRows())
 	var b strings.Builder
@@ -942,11 +1472,11 @@ func (m model) skillsBody() string {
 func (m model) helpLine() string {
 	switch m.tab {
 	case tabProviders:
-		return "1/2/3 切换 · a 新增 · enter/e 编辑 · d 删除 · s 保存 · r 重载 · o 配置来源 · ? 帮助 · q 退出"
+		return "1/2/3 切换 · a 新增 · enter/e 编辑 · v variants · d 删除 · s 保存 · r 重载 · o 配置来源 · ? 帮助 · q 退出"
 	case tabMCP:
 		return "1/2/3 切换 · a 新增 · enter/e 编辑 · d 删除 · space 启停 · s 保存 · r 重载 · o 配置来源 · q 退出"
 	default:
-		return "1/2/3 切换 · enter 查看 · ↑↓ 选择 · r 重载 · q 退出"
+		return "1/2/3 切换 · a 安装 · enter 查看 · d 删除 · ↑↓ 选择 · r 重载 · q 退出"
 	}
 }
 
@@ -956,9 +1486,10 @@ func (m model) helpView() string {
 			"  · 修改保存在内存中，按 s 写回文件（保留注释与未知字段）。\n" +
 			"  · 保存时会生成 <配置文件>.bak 备份。\n" +
 			"  · 编辑 provider/MCP 时名称不可修改（改名请删除后新增）。\n" +
-			"  · Provider 未在表单中暴露的键（如 models）会被原样保留。\n" +
+			"  · Provider 按 v 管理 models.variants；options 每行 KEY=value，JSON 值原样保留。\n" +
+			"  · Provider 未在表单中暴露的键（如 blacklist）会被原样保留。\n" +
 			"  · MCP local 类型：Tab 到「浏览可执行文件」按钮按 Enter（或按 ctrl+f）选择可执行文件。\n" +
-			"  · Skills 标签页为只读，enter 查看 SKILL.md 全文。")
+			"  · Skills：a 从 zip URI 下载并解压到指定目录；d 删除技能目录；enter 查看 SKILL.md 全文。")
 }
 
 func (m model) sourceView() string {

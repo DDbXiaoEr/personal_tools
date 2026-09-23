@@ -17,4 +17,5 @@ var (
 	boxStyle           = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 	buttonStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Border(lipgloss.RoundedBorder()).Padding(0, 1)
 	buttonFocusedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57")).Border(lipgloss.RoundedBorder()).Padding(0, 1)
+	catStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 )

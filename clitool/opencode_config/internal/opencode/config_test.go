@@ -103,8 +103,12 @@ func TestSavePreservesCommentsAndUnknownKeys(t *testing.T) {
 	if got.BaseURL != "https://proxy.example.com/v1" {
 		t.Errorf("baseURL = %q", got.BaseURL)
 	}
-	if got.ExtraKeys()[0] != "models" {
-		t.Errorf("expected models preserved, extras=%v", got.ExtraKeys())
+	if len(got.Models) != 1 || got.Models[0].ID != "claude" || got.Models[0].Name != "Claude" {
+		t.Errorf("models not preserved: %+v", got.Models)
+	}
+	extras := got.ExtraKeys()
+	if len(extras) == 0 || extras[0] != "options.timeout" {
+		t.Errorf("expected options.timeout preserved, extras=%v", extras)
 	}
 	if _, ok := reloaded.Providers["local"]; !ok {
 		t.Error("new provider missing after reload")
@@ -221,6 +225,96 @@ func TestPointerEscaping(t *testing.T) {
 	}
 	if _, ok := reloaded.Providers["anthropic"]; !ok {
 		t.Error("anthropic provider lost")
+	}
+}
+
+func TestVariantCRUD(t *testing.T) {
+	path := writeTemp(t, sampleJSONC)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p := ParseProvider("anthropic", cfg.Provider("anthropic"))
+	p.SetVariant("claude", &Variant{
+		ID: "high",
+		Options: []KV{
+			{Key: "reasoningEffort", Value: "high"},
+			{Key: "thinking", Value: `{"type":"enabled","budgetTokens":16000}`},
+		},
+	})
+	p.SetVariant("gpt-5", &Variant{ID: "fast", Disabled: true, Options: []KV{{Key: "reasoningEffort", Value: "low"}}})
+	raw, err := p.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SetProvider("anthropic", raw)
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	out := readFile(t, path)
+	for _, want := range []string{
+		`"variants"`,
+		`"high"`,
+		`"reasoningEffort"`,
+		`"budgetTokens"`,
+		`"fast"`,
+		`"disabled"`,
+		`"claude"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("saved output missing %q\n%s", want, out)
+		}
+	}
+
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ParseProvider("anthropic", reloaded.Provider("anthropic"))
+	if got.NumVariants() != 2 {
+		t.Fatalf("variants = %d, models=%+v", got.NumVariants(), got.Models)
+	}
+	high := got.FindVariant("claude", "high")
+	if high == nil || high.Disabled {
+		t.Fatalf("high missing: %+v", high)
+	}
+	if len(high.Options) != 2 {
+		t.Fatalf("high options = %+v", high.Options)
+	}
+	fast := got.FindVariant("gpt-5", "fast")
+	if fast == nil || !fast.Disabled {
+		t.Fatalf("fast missing/disabled: %+v", fast)
+	}
+	if !got.ToggleVariantDisabled("gpt-5", "fast") || got.FindVariant("gpt-5", "fast").Disabled {
+		t.Fatal("toggle failed")
+	}
+	got.DeleteVariant("gpt-5", "fast")
+	if got.FindVariant("gpt-5", "fast") != nil {
+		t.Fatal("fast not deleted")
+	}
+	raw, err = got.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SetProvider("anthropic", raw)
+	if err := cfg.Save(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	final := ParseProvider("anthropic", again.Provider("anthropic"))
+	if final.FindVariant("gpt-5", "fast") != nil {
+		t.Fatal("fast still present after save")
+	}
+	if final.FindVariant("claude", "high") == nil {
+		t.Fatal("high lost")
+	}
+	if final.FindModel("claude") == nil || final.FindModel("claude").Name != "Claude" {
+		t.Fatal("claude model name lost")
 	}
 }
 

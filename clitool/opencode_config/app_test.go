@@ -34,6 +34,20 @@ func TestApplyPickedFileEmpty(t *testing.T) {
 	}
 }
 
+func TestSkillNameFromURI(t *testing.T) {
+	cases := map[string]string{
+		"https://example.com/foo-bar.zip":      "foo-bar",
+		"https://example.com/Foo_Bar.zip?dl=1": "foo-bar",
+		"/tmp/my.skill.zip":                    "my-skill",
+		"":                                     "",
+	}
+	for in, want := range cases {
+		if got := skillNameFromURI(in); got != want {
+			t.Errorf("skillNameFromURI(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestParseKV(t *testing.T) {
 	kvs := parseKV("A=1\nB = two\n# comment\nC", "=")
 	if len(kvs) != 3 {
