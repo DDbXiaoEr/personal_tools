@@ -82,6 +82,11 @@ func Install(skillsDir, name, uri string) error {
 		_ = os.RemoveAll(dest)
 		return err
 	}
+	if p, ok := localPath(uri); ok {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("已安装，但删除压缩包失败: %w", err)
+		}
+	}
 	return nil
 }
 

@@ -149,8 +149,17 @@ func TestInstallAndRemoveLocalZip(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(skillsDir, "demo-skill", "notes.md")); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(zipPath); !os.IsNotExist(err) {
+		t.Fatalf("zip still exists after install: %v", err)
+	}
+	writeZip(t, zipPath, map[string]string{
+		"SKILL.md": "---\nname: demo-skill\ndescription: d\n---\n# hi\n",
+	})
 	if err := Install(skillsDir, "demo-skill", zipPath); err == nil {
 		t.Fatal("expected duplicate install to fail")
+	}
+	if _, err := os.Stat(zipPath); err != nil {
+		t.Fatalf("zip removed after failed install: %v", err)
 	}
 	if err := Remove(skillsDir, "demo-skill"); err != nil {
 		t.Fatal(err)
