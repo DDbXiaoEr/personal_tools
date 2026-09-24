@@ -7,7 +7,7 @@ all: build
 
 build: build-clitool build-mcptool
 
-build-clitool: build-markdown2pdf build-sshman build-viewcsv build-occonfig build-shellman
+build-clitool: build-markdown2pdf build-sshman build-viewcsv build-occonfig build-shellman build-ansiman
 
 build-mcptool: build-sshtool
 
@@ -31,13 +31,17 @@ build-shellman:
 	@echo "Building shellman..."
 	cd clitool/shell_rc_manage && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/shellman .
 
+build-ansiman:
+	@echo "Building ansiman..."
+	cd clitool/ansible_inventory && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/ansiman .
+
 build-sshtool:
 	@echo "Building sshtool..."
 	cd mcptool && go build -o ../$(BIN_DIR)/mcptool/sshtool ./cmd/sshtool/
 
 linux: linux-clitool linux-mcptool
 
-linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv linux-occonfig linux-shellman
+linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv linux-occonfig linux-shellman linux-ansiman
 
 linux-mcptool: linux-sshtool
 
@@ -60,6 +64,10 @@ linux-occonfig:
 linux-shellman:
 	@echo "Building shellman for Linux..."
 	cd clitool/shell_rc_manage && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/shellman-linux .
+
+linux-ansiman:
+	@echo "Building ansiman for Linux..."
+	cd clitool/ansible_inventory && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/ansiman-linux .
 
 linux-sshtool:
 	@echo "Building sshtool for Linux..."

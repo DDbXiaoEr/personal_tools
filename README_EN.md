@@ -13,7 +13,8 @@ my-tools/
 │   ├── ssh_config_manage/# SSH config manager
 │   ├── viewcsv/          # CSV viewer
 │   ├── opencode_config/  # opencode config manager TUI
-│   └── shell_rc_manage/  # shell alias / env / function TUI
+│   ├── shell_rc_manage/  # shell alias / env / function TUI
+│   └── ansible_inventory/# Ansible inventory manager TUI
 └── mcptool/              # MCP tools
     └── cmd/sshtool/      # SSH MCP Server
 ```
@@ -147,6 +148,46 @@ occonfig -config /path/to/opencode.json -skills-dir ~/.config/opencode/skills
 **MCP local command:** in the form, Tab to the "浏览可执行文件" button and press `Enter` (or press `ctrl+f`) to open a file picker; the selected executable path is auto-filled and existing argument lines are kept.
 
 > Saving writes a `<config>.bak` backup and normalizes the file to tab-indented JSONC (opencode-compatible).
+
+### ansiman
+
+TUI for Ansible inventories, built with Bubble Tea. Manage a default inventory and project inventories (INI / YAML): hosts, groups, and group vars.
+
+**Config dir `~/.config/ansiman/`:**
+
+| File | Content |
+|------|---------|
+| `config` | `default_inventory=/path/to/hosts` |
+| `projects` | one `name=path` per line, separate from config |
+
+If unset, the default path falls back to `ANSIBLE_INVENTORY` / ansible.cfg / `/etc/ansible/hosts`. Press `o` for the source page: left pane edits the default path, right pane manages the project list.
+
+```bash
+# Usage (default inventory)
+ansiman
+
+# Explicit inventory file
+ansiman -file ./inventory.yml
+```
+
+**Keybindings:**
+
+| Key | Action |
+|-----|--------|
+| `1` / `2` / `3` | Switch Hosts / Groups / Vars |
+| `↑` `↓` / `j` `k` | Move cursor |
+| `a` | Add |
+| `enter` / `e` | Edit |
+| `d` | Delete (with confirmation) |
+| `s` | Save to file |
+| `r` | Reload from disk |
+| `o` | Source: default path / project list |
+| `?` | Help |
+| `q` | Quit |
+
+In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Extra host vars and child groups use a textarea, one item per line.
+
+> Saving writes a `<inventory>.bak` backup and keeps the original format (INI or YAML). Deleting a group moves its hosts to `ungrouped`. Rename by deleting and adding.
 
 ### sshtool (MCP Server)
 

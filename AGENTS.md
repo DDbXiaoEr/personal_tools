@@ -22,7 +22,7 @@ clitool/     # CLI，各子目录一个工具
 mcptool/     # MCP server
 ```
 
-现有 TUI：`ssh_config_manage`（sshman）、`opencode_config`（occonfig）、`shell_rc_manage`（shellman）。后两个才是当前风格；sshman 偏旧，新工具不要仿它。
+现有 TUI：`ssh_config_manage`（sshman）、`opencode_config`（occonfig）、`shell_rc_manage`（shellman）、`ansible_inventory`（ansiman）。occonfig / shellman / ansiman 才是当前风格；sshman 偏旧，新工具不要仿它。
 
 ## 构建
 

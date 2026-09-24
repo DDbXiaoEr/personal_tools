@@ -13,7 +13,8 @@ my-tools/
 │   ├── ssh_config_manage/# SSH 配置管理
 │   ├── viewcsv/          # CSV 查看器
 │   ├── opencode_config/  # opencode 配置管理 TUI
-│   └── shell_rc_manage/  # shell 别名 / 环境变量 / 函数 TUI
+│   ├── shell_rc_manage/  # shell 别名 / 环境变量 / 函数 TUI
+│   └── ansible_inventory/# Ansible 清单管理 TUI
 └── mcptool/              # MCP 工具
     └── cmd/sshtool/      # SSH MCP Server
 ```
@@ -147,6 +148,46 @@ occonfig -config /path/to/opencode.json -skills-dir ~/.config/opencode/skills
 **MCP local 配置命令：** 在表单中 Tab 到「浏览可执行文件」按钮按 `Enter`（或按 `ctrl+f`）打开文件选择器，选中后自动填入可执行文件路径，已有参数行会保留。
 
 > 保存时会生成 `<配置文件>.bak` 备份，并将文件格式化为制表符缩进的 JSONC（opencode 兼容）。
+
+### ansiman
+
+Ansible 主机清单管理 TUI，基于 Bubble Tea 构建。管理默认清单和项目级 inventory（INI / YAML），覆盖主机、组、组变量。
+
+**配置目录 `~/.config/ansiman/`：**
+
+| 文件 | 内容 |
+|------|------|
+| `config` | `default_inventory=/path/to/hosts` |
+| `projects` | 每行 `名称=路径`，与 config 分开 |
+
+未配置时，默认路径回退 `ANSIBLE_INVENTORY` / ansible.cfg / `/etc/ansible/hosts`。按 `o` 打开来源页：左侧改默认路径，右侧管理项目列表。
+
+```bash
+# 使用（默认清单）
+ansiman
+
+# 指定清单文件
+ansiman -file ./inventory.yml
+```
+
+**快捷键：**
+
+| 按键 | 说明 |
+|------|------|
+| `1` / `2` / `3` | 切换 主机 / 组 / 变量 |
+| `↑` `↓` / `j` `k` | 移动光标 |
+| `a` | 新增 |
+| `enter` / `e` | 编辑 |
+| `d` | 删除（需确认） |
+| `s` | 保存到文件 |
+| `r` | 从文件重载 |
+| `o` | 来源：默认路径 / 项目列表 |
+| `?` | 帮助 |
+| `q` | 退出 |
+
+表单中 `tab` 切字段，`ctrl+s` 应用，`esc` 取消。主机额外变量与子组用 textarea，每行一条。
+
+> 保存时会生成 `<清单文件>.bak` 备份。写回保持原格式（INI 或 YAML）。删除组时，组内主机移到 `ungrouped`。改名请删除后新增。
 
 ### sshtool (MCP Server)
 
