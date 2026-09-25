@@ -7,7 +7,7 @@ all: build
 
 build: build-clitool build-mcptool
 
-build-clitool: build-markdown2pdf build-sshman build-viewcsv build-occonfig build-shellman build-ansiman
+build-clitool: build-markdown2pdf build-sshman build-viewcsv build-occonfig build-shellman build-ansibleman
 
 build-mcptool: build-sshtool
 
@@ -31,9 +31,9 @@ build-shellman:
 	@echo "Building shellman..."
 	cd clitool/shell_rc_manage && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/shellman .
 
-build-ansiman:
-	@echo "Building ansiman..."
-	cd clitool/ansible_inventory && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/ansiman .
+build-ansibleman:
+	@echo "Building ansibleman..."
+	cd clitool/ansible_inventory && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/ansibleman .
 
 build-sshtool:
 	@echo "Building sshtool..."
