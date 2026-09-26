@@ -14,6 +14,7 @@ my-tools/
 │   ├── viewcsv/          # CSV 查看器
 │   ├── opencode_config/  # opencode 配置管理 TUI
 │   ├── shell_rc_manage/  # shell 别名 / 环境变量 / 函数 TUI
+│   ├── powershell_rc_manage/ # PowerShell 别名 / 环境变量 / 函数 TUI
 │   └── ansible_inventory/# Ansible 清单管理 TUI
 └── mcptool/              # MCP 工具
     └── cmd/sshtool/      # SSH MCP Server
@@ -109,6 +110,62 @@ shellman -dir /custom
 表单中 `tab` 切字段，`ctrl+s` 应用，`esc` 取消。函数体和 snippet 用 textarea 编辑。
 
 > 保存时会生成 `<文件>.bak` 备份。现有 `~/.zsh_aliases` 不会被读取，需要的话在 rc 里改成 `source ~/.zsh_alias` 等。
+
+### psman
+
+PowerShell 别名、环境变量、自定义函数管理 TUI，基于 Bubble Tea 构建。读写家目录下的 `.ps_{alias,env,functions}.ps1`，按分类注释分组保存。不修改 `$PROFILE`，请自行点源。
+
+**文件约定：**
+
+| 文件 | 内容 |
+|------|------|
+| `~/.ps_alias.ps1` | `Set-Alias -Name name -Value cmd` |
+| `~/.ps_env.ps1` | `$env:KEY = value` / snippet |
+| `~/.ps_functions.ps1` | `function name { ... }` |
+
+保存时同类条目写在同一分类下：
+
+```powershell
+# ===== Docker =====
+Set-Alias -Name dim -Value docker
+Set-Alias -Name dps -Value Get-Process
+```
+
+Env 支持 `$env:KEY = value`，以及 nvm 这类多行 snippet。PowerShell 的 `Set-Alias` 只能指向命令名，带参数的快捷方式请用 Functions。
+
+```powershell
+# 使用（默认目录 $HOME）
+psman
+
+# 指定目录
+psman -dir C:\Users\me
+```
+
+在 `$PROFILE` 里自行加载：
+
+```powershell
+. "$HOME\.ps_alias.ps1"
+. "$HOME\.ps_env.ps1"
+. "$HOME\.ps_functions.ps1"
+```
+
+**快捷键：**
+
+| 按键 | 说明 |
+|------|------|
+| `1` / `2` / `3` | 切换 Alias / Env / Functions |
+| `↑` `↓` / `j` `k` | 移动光标 |
+| `a` | 新增 |
+| `enter` / `e` | 编辑 |
+| `d` | 删除（需确认） |
+| `s` | 保存当前标签对应文件 |
+| `r` | 从文件重载 |
+| `?` | 帮助 |
+| `q` | 退出 |
+
+表单中 `tab` 切字段，`ctrl+s` 应用，`esc` 取消。函数体和 snippet 用 textarea 编辑。编辑时名称只读，改名请删除后新增。
+
+> 保存时会生成 `<文件>.bak` 备份，写出 CRLF。交叉编译：`make windows`。
 
 ### occonfig
 
@@ -215,6 +272,9 @@ make
 
 # 构建 Linux 版本
 make linux
+
+# 构建 Windows 版本（psman.exe）
+make windows
 
 # 清理
 make clean

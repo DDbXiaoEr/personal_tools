@@ -1,4 +1,4 @@
-.PHONY: all build clean linux
+.PHONY: all build clean linux windows
 
 BIN_DIR := bin
 DIST_DIR := dist
@@ -7,7 +7,7 @@ all: build
 
 build: build-clitool build-mcptool
 
-build-clitool: build-markdown2pdf build-sshman build-viewcsv build-occonfig build-shellman build-ansibleman
+build-clitool: build-markdown2pdf build-sshman build-viewcsv build-occonfig build-shellman build-ansibleman build-psman
 
 build-mcptool: build-sshtool
 
@@ -35,13 +35,17 @@ build-ansibleman:
 	@echo "Building ansibleman..."
 	cd clitool/ansible_inventory && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/ansibleman .
 
+build-psman:
+	@echo "Building psman..."
+	cd clitool/powershell_rc_manage && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/psman .
+
 build-sshtool:
 	@echo "Building sshtool..."
 	cd mcptool && go build -o ../$(BIN_DIR)/mcptool/sshtool ./cmd/sshtool/
 
 linux: linux-clitool linux-mcptool
 
-linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv linux-occonfig linux-shellman linux-ansiman
+linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv linux-occonfig linux-shellman linux-ansiman linux-psman
 
 linux-mcptool: linux-sshtool
 
@@ -68,6 +72,16 @@ linux-shellman:
 linux-ansiman:
 	@echo "Building ansiman for Linux..."
 	cd clitool/ansible_inventory && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/ansiman-linux .
+
+linux-psman:
+	@echo "Building psman for Linux..."
+	cd clitool/powershell_rc_manage && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/psman-linux .
+
+windows: windows-psman
+
+windows-psman:
+	@echo "Building psman for Windows..."
+	cd clitool/powershell_rc_manage && GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/psman.exe .
 
 linux-sshtool:
 	@echo "Building sshtool for Linux..."

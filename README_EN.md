@@ -14,6 +14,7 @@ my-tools/
 │   ├── viewcsv/          # CSV viewer
 │   ├── opencode_config/  # opencode config manager TUI
 │   ├── shell_rc_manage/  # shell alias / env / function TUI
+│   ├── powershell_rc_manage/ # PowerShell alias / env / function TUI
 │   └── ansible_inventory/# Ansible inventory manager TUI
 └── mcptool/              # MCP tools
     └── cmd/sshtool/      # SSH MCP Server
@@ -109,6 +110,62 @@ shellman -dir /custom
 In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Function bodies and snippets use a textarea.
 
 > Saving writes a `<file>.bak` backup. Existing `~/.zsh_aliases` is not read; point your rc at `source ~/.zsh_alias` if you want to migrate.
+
+### psman
+
+TUI for managing PowerShell aliases, environment variables, and custom functions, built with Bubble Tea. Reads/writes `.ps_{alias,env,functions}.ps1` in the home directory, grouped by category comments on save. Does not modify `$PROFILE`; dot-source those files yourself.
+
+**File layout:**
+
+| File | Content |
+|------|---------|
+| `~/.ps_alias.ps1` | `Set-Alias -Name name -Value cmd` |
+| `~/.ps_env.ps1` | `$env:KEY = value` / snippet |
+| `~/.ps_functions.ps1` | `function name { ... }` |
+
+Items in the same category are written together:
+
+```powershell
+# ===== Docker =====
+Set-Alias -Name dim -Value docker
+Set-Alias -Name dps -Value Get-Process
+```
+
+Env entries support `$env:KEY = value` and multi-line snippets. PowerShell `Set-Alias` can only point at a command name; use Functions for parameterized shortcuts.
+
+```powershell
+# Usage (defaults to $HOME)
+psman
+
+# Override directory
+psman -dir C:\Users\me
+```
+
+Load from `$PROFILE`:
+
+```powershell
+. "$HOME\.ps_alias.ps1"
+. "$HOME\.ps_env.ps1"
+. "$HOME\.ps_functions.ps1"
+```
+
+**Keybindings:**
+
+| Key | Action |
+|-----|--------|
+| `1` / `2` / `3` | Switch Alias / Env / Functions |
+| `↑` `↓` / `j` `k` | Move cursor |
+| `a` | Add |
+| `enter` / `e` | Edit |
+| `d` | Delete (with confirmation) |
+| `s` | Save the current tab's file |
+| `r` | Reload from disk |
+| `?` | Help |
+| `q` | Quit |
+
+In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Function bodies and snippets use a textarea. Names are read-only when editing; rename by deleting and adding.
+
+> Saving writes a `<file>.bak` backup and uses CRLF. Cross-compile with `make windows`.
 
 ### occonfig
 
@@ -215,6 +272,9 @@ make
 
 # Build for Linux
 make linux
+
+# Build for Windows (psman.exe)
+make windows
 
 # Clean
 make clean
