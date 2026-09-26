@@ -22,14 +22,13 @@ clitool/     # CLI，各子目录一个工具
 mcptool/     # MCP server
 ```
 
-现有 TUI：`ssh_config_manage`（sshman）、`opencode_config`（occonfig）、`shell_rc_manage`（shellman）、`powershell_rc_manage`（psman）、`ansible_inventory`（ansiman）。occonfig / shellman / psman / ansiman 才是当前风格；sshman 偏旧，新工具不要仿它。
+现有 TUI：`ssh_config_manage`（sshman）、`opencode_config`（occonfig）、`shell_rc_manage`（shellman）、`ansible_inventory`（ansiman）。occonfig / shellman / ansiman 才是当前风格；sshman 偏旧，新工具不要仿它。
 
 ## 构建
 
 ```
 make            # 全部
 make linux      # linux amd64
-make windows    # windows amd64（psman.exe）
 make clean
 ```
 
