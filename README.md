@@ -191,21 +191,37 @@ ansiman -file ./inventory.yml
 
 ### sshtool (MCP Server)
 
-SSH 远程命令执行 MCP Server，支持密码和密钥认证，内置高危命令拦截。可通过 MCP 协议集成到 AI 助手或自动化工具中，实现安全的远程服务器管理。
+SSH 远程命令执行 / 文件传输 MCP Server，支持密码和密钥认证，内置高危命令拦截。命令走 SSH session，上传下载走 SFTP。可通过 MCP 协议集成到 AI 助手或自动化工具中。
 
 **可用工具：**
 - `runsshcommand_via_ssh` - 在远程主机执行命令
+- `uploadfile_via_ssh` - 通过 SFTP 上传本地文件
+- `downloadfile_via_ssh` - 通过 SFTP 下载远程文件
 
-**参数：**
+**公共参数：**
 | 参数 | 必填 | 说明 |
 |------|------|------|
 | host | 是 | 远程主机 IP 或域名 |
 | user | 是 | SSH 用户名 |
-| command | 是 | 要执行的命令 |
 | port | 否 | SSH 端口 (默认 22) |
-| password | 否 | SSH 密码 |
-| key_path | 否 | SSH 私钥路径 |
+| password | 否 | SSH 密码（与 key_path 二选一） |
+| key_path | 否 | SSH 私钥路径（与 password 二选一） |
 | timeout | 否 | 连接超时秒数 (默认 30) |
+
+**runsshcommand_via_ssh 额外参数：**
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| command | 是 | 要执行的命令 |
+
+**uploadfile_via_ssh / downloadfile_via_ssh 额外参数：**
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| local_path | 是 | 本地文件路径 |
+| remote_path | 是 | 远程文件路径。上传时若目标是目录（已存在或以 `/` 结尾），自动拼接本地文件名 |
+| overwrite | 否 | 目标已存在时是否覆盖（默认 false） |
+| create_dirs | 否 | 是否创建缺失的父目录（默认 false） |
+
+不支持目录递归传输。默认不覆盖已有文件。
 
 ## 构建
 

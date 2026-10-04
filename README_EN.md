@@ -191,21 +191,37 @@ In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Extra host vars a
 
 ### sshtool (MCP Server)
 
-SSH remote command execution MCP Server with password and key authentication. Built-in high-risk command blocking. Can be integrated into AI assistants or automation tools via MCP protocol for secure remote server management.
+SSH remote command execution / file transfer MCP Server with password and key authentication. Built-in high-risk command blocking. Commands run over an SSH session; uploads and downloads use SFTP. Can be integrated into AI assistants or automation tools via MCP.
 
 **Available Tools:**
 - `runsshcommand_via_ssh` - Execute commands on remote hosts
+- `uploadfile_via_ssh` - Upload a local file over SFTP
+- `downloadfile_via_ssh` - Download a remote file over SFTP
 
-**Parameters:**
+**Shared parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | host | Yes | Remote host IP or hostname |
 | user | Yes | SSH username |
-| command | Yes | Command to execute |
 | port | No | SSH port (default: 22) |
-| password | No | SSH password |
-| key_path | No | Path to SSH private key |
+| password | No | SSH password (either this or key_path) |
+| key_path | No | Path to SSH private key (either this or password) |
 | timeout | No | Connection timeout in seconds (default: 30) |
+
+**runsshcommand_via_ssh extra parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| command | Yes | Command to execute |
+
+**uploadfile_via_ssh / downloadfile_via_ssh extra parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| local_path | Yes | Local file path |
+| remote_path | Yes | Remote file path. On upload, if the destination is a directory (exists or ends with `/`), the local filename is appended |
+| overwrite | No | Overwrite an existing destination (default: false) |
+| create_dirs | No | Create missing parent directories (default: false) |
+
+Directory trees are not supported. Existing files are not overwritten by default.
 
 ## Build
 
