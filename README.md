@@ -11,7 +11,7 @@ my-tools/
 ├── clitool/              # CLI 工具
 │   ├── markdown2pdf/     # Markdown 转 PDF
 │   ├── ssh_config_manage/# SSH 配置管理
-│   ├── viewcsv/          # CSV 查看器
+│   ├── viewcsv_xlsx/     # CSV / XLSX 查看器
 │   ├── opencode_config/  # opencode 配置管理 TUI
 │   ├── shell_rc_manage/  # shell 别名 / 环境变量 / 函数 TUI
 │   └── ansible_inventory/# Ansible 清单管理 TUI
@@ -42,22 +42,27 @@ SSH 配置文件管理 TUI 工具，基于 Bubble Tea 构建。方便查看、�
 sshman -file ~/.ssh/config
 ```
 
-### viewcsv
+### viewcsv_xlsx
 
-CSV 文件查看工具，以表格形式展示 CSV 内容，支持自定义分隔符和中文对齐。
+CSV / XLSX 文件查看工具，以表格形式展示内容，支持自定义分隔符、中文对齐，以及多 Sheet 的 Excel 文件。
 
 ```bash
-# 使用
-viewcsv input.csv
+# 使用（按扩展名自动识别 CSV / XLSX）
+viewcsv_xlsx input.csv
+viewcsv_xlsx input.xlsx
 
 # 读取当前目录所有 CSV
-viewcsv *.csv
+viewcsv_xlsx *.csv
 
 # 指定分隔符
-viewcsv input.tsv -d "	"
+viewcsv_xlsx -d "	" input.tsv
+
+# 指定 Sheet（名称或 1 起始的序号，默认展示全部）
+viewcsv_xlsx --sheet 2 input.xlsx
+viewcsv_xlsx --sheet 用户 input.xlsx
 
 # 无表头模式
-viewcsv input.csv --no-header
+viewcsv_xlsx --no-header input.csv
 ```
 
 ### shellman

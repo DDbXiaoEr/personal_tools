@@ -1,13 +1,12 @@
 .PHONY: all build clean linux
 
 BIN_DIR := bin
-DIST_DIR := dist
 
 all: build
 
 build: build-clitool build-mcptool
 
-build-clitool: build-markdown2pdf build-sshman build-viewcsv build-occonfig build-shellman build-ansibleman
+build-clitool: build-markdown2pdf build-sshman build-viewcsv_xlsx build-occonfig build-shellman build-ansibleman
 
 build-mcptool: build-sshtool
 
@@ -19,9 +18,9 @@ build-sshman:
 	@echo "Building sshman..."
 	cd clitool/ssh_config_manage && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/sshman .
 
-build-viewcsv:
-	@echo "Building viewcsv..."
-	cd clitool/viewcsv && go build -o ../../$(BIN_DIR)/clitool/viewcsv .
+build-viewcsv_xlsx:
+	@echo "Building viewcsv_xlsx..."
+	cd clitool/viewcsv_xlsx && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/viewcsv_xlsx .
 
 build-occonfig:
 	@echo "Building occonfig..."
@@ -41,7 +40,7 @@ build-sshtool:
 
 linux: linux-clitool linux-mcptool
 
-linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv linux-occonfig linux-shellman linux-ansiman
+linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv_xlsx linux-occonfig linux-shellman linux-ansiman
 
 linux-mcptool: linux-sshtool
 
@@ -53,9 +52,9 @@ linux-sshman:
 	@echo "Building sshman for Linux..."
 	cd clitool/ssh_config_manage && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/sshman-linux .
 
-linux-viewcsv:
-	@echo "Building viewcsv for Linux..."
-	cd clitool/viewcsv && GOOS=linux GOARCH=amd64 go build -o ../../$(BIN_DIR)/clitool/viewcsv-linux .
+linux-viewcsv_xlsx:
+	@echo "Building viewcsv_xlsx for Linux..."
+	cd clitool/viewcsv_xlsx && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/viewcsv_xlsx-linux .
 
 linux-occonfig:
 	@echo "Building occonfig for Linux..."
@@ -75,4 +74,3 @@ linux-sshtool:
 
 clean:
 	rm -rf $(BIN_DIR)/*
-	rm -f $(DIST_DIR)/*

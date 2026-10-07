@@ -7,19 +7,23 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func main() {
-	delimiter := flag.String("d", ",", "delimiter character")
+	delimiter := flag.String("d", ",", "delimiter character (CSV only)")
 	noHeader := flag.Bool("no-header", false, "treat first row as data, not header")
+	sheet := flag.String("sheet", "", "sheet name or 1-based index (XLSX only, default: all sheets)")
 	flag.Parse()
 
 	patterns := flag.Args()
 	if len(patterns) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: viewcsv file.csv [file.csv ...] [-d delimiter] [--no-header]")
-		fmt.Fprintln(os.Stderr, "       viewcsv *.csv")
+		fmt.Fprintln(os.Stderr, "usage: viewcsv_xlsx file.csv|file.xlsx [file ...] [-d delimiter] [--no-header] [--sheet name]")
+		fmt.Fprintln(os.Stderr, "       viewcsv_xlsx *.xlsx")
 		os.Exit(1)
 	}
 
@@ -36,7 +40,7 @@ func main() {
 			}
 			fmt.Println("=== " + filename + " ===")
 		}
-		if err := viewCSV(filename, *delimiter, *noHeader); err != nil {
+		if err := viewFile(filename, *delimiter, *noHeader, *sheet); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", filename+":", err)
 			os.Exit(1)
 		}
@@ -76,6 +80,15 @@ func hasGlob(s string) bool {
 	return strings.ContainsAny(s, "*?[")
 }
 
+func viewFile(filename, delimiter string, noHeader bool, sheet string) error {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".xlsx", ".xlsm", ".xltx", ".xltm":
+		return viewXLSX(filename, noHeader, sheet)
+	default:
+		return viewCSV(filename, delimiter, noHeader)
+	}
+}
+
 func viewCSV(filename, delimiter string, noHeader bool) error {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -100,6 +113,63 @@ func viewCSV(filename, delimiter string, noHeader bool) error {
 
 	printTable(records, noHeader)
 	return nil
+}
+
+func viewXLSX(filename string, noHeader bool, sheet string) error {
+	f, err := excelize.OpenFile(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	sheets := f.GetSheetList()
+	if len(sheets) == 0 {
+		fmt.Println("empty XLSX file")
+		return nil
+	}
+
+	selected, err := selectSheets(sheets, sheet)
+	if err != nil {
+		return err
+	}
+
+	multi := len(selected) > 1
+	for i, name := range selected {
+		records, err := f.GetRows(name)
+		if err != nil {
+			return err
+		}
+		if multi {
+			if i > 0 {
+				fmt.Println()
+			}
+			fmt.Println("--- sheet: " + name + " ---")
+		}
+		if len(records) == 0 {
+			fmt.Println("empty sheet")
+			continue
+		}
+		printTable(records, noHeader)
+	}
+	return nil
+}
+
+func selectSheets(sheets []string, sheet string) ([]string, error) {
+	if sheet == "" {
+		return sheets, nil
+	}
+	for _, name := range sheets {
+		if name == sheet {
+			return []string{name}, nil
+		}
+	}
+	if idx, err := strconv.Atoi(sheet); err == nil {
+		if idx < 1 || idx > len(sheets) {
+			return nil, fmt.Errorf("sheet index %d out of range (1-%d)", idx, len(sheets))
+		}
+		return []string{sheets[idx-1]}, nil
+	}
+	return nil, fmt.Errorf("sheet %q not found", sheet)
 }
 
 func printTable(records [][]string, noHeader bool) {
@@ -152,7 +222,7 @@ func printSeparator(colWidths []int, isTop, isBottom, isHeader bool) {
 	left := "├"
 	right := "┤"
 	mid := "┼"
-	
+
 	if isTop {
 		left = "┌"
 		right = "┐"
@@ -166,7 +236,7 @@ func printSeparator(colWidths []int, isTop, isBottom, isHeader bool) {
 		right = "┤"
 		mid = "┼"
 	}
-	
+
 	fmt.Print(left)
 	for i, width := range colWidths {
 		if i > 0 {

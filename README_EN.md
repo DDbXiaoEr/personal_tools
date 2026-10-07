@@ -11,7 +11,7 @@ my-tools/
 ├── clitool/              # CLI tools
 │   ├── markdown2pdf/     # Markdown to PDF converter
 │   ├── ssh_config_manage/# SSH config manager
-│   ├── viewcsv/          # CSV viewer
+│   ├── viewcsv_xlsx/     # CSV / XLSX viewer
 │   ├── opencode_config/  # opencode config manager TUI
 │   ├── shell_rc_manage/  # shell alias / env / function TUI
 │   └── ansible_inventory/# Ansible inventory manager TUI
@@ -42,22 +42,27 @@ TUI tool for managing SSH config files, built with Bubble Tea. Convenient for vi
 sshman -file ~/.ssh/config
 ```
 
-### viewcsv
+### viewcsv_xlsx
 
-CSV file viewer that displays content in table format with custom delimiter support and Chinese character alignment.
+CSV / XLSX file viewer that displays content in table format with custom delimiter support, Chinese character alignment, and multi-sheet Excel files.
 
 ```bash
-# Usage
-viewcsv input.csv
+# Usage (format auto-detected by extension)
+viewcsv_xlsx input.csv
+viewcsv_xlsx input.xlsx
 
 # Read all CSV files in the current directory
-viewcsv *.csv
+viewcsv_xlsx *.csv
 
 # Custom delimiter
-viewcsv input.tsv -d "	"
+viewcsv_xlsx -d "	" input.tsv
+
+# Select a sheet (name or 1-based index, defaults to all)
+viewcsv_xlsx --sheet 2 input.xlsx
+viewcsv_xlsx --sheet Users input.xlsx
 
 # No header mode
-viewcsv input.csv --no-header
+viewcsv_xlsx --no-header input.csv
 ```
 
 ### shellman
