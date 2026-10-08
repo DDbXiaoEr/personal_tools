@@ -1,4 +1,4 @@
-# mtlstificate
+# mtlscertificate
 
 自签 mTLS 证书工具：先建根 CA，再签发服务端 / 客户端证书。
 
