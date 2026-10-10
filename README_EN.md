@@ -60,7 +60,7 @@ In forms, `tab` moves fields, `ctrl+s` applies to memory, `esc` cancels. Disk wr
 
 ### viewcsv_xlsx
 
-CSV / XLSX file viewer that displays content in table format with custom delimiter support, Chinese character alignment, and multi-sheet Excel files.
+CSV / XLSX file viewer that displays content in table format with custom delimiter support, Chinese character alignment, and multi-sheet Excel files. Multiple files open fullscreen; `tab` / `shift+tab` switch files. A single file or piped (non-TTY) output still prints the table.
 
 ```bash
 # Usage (format auto-detected by extension)
@@ -80,6 +80,15 @@ viewcsv_xlsx --sheet Users input.xlsx
 # No header mode
 viewcsv_xlsx --no-header input.csv
 ```
+
+**Keys (fullscreen, multiple files):**
+
+| Key | Action |
+|-----|--------|
+| `tab` / `shift+tab` | Switch file |
+| `[` / `]` | Switch sheet |
+| `↑` `↓` `←` `→` / `j` `k` | Scroll |
+| `q` | Quit |
 
 ### shellman
 
