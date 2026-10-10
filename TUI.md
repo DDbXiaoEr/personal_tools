@@ -226,17 +226,13 @@ TUI 只调这些 API。测试写在 `internal/`，覆盖解析、写出、备份
 
 根目录 `Makefile` 为每个工具加一对 target，TUI 用 `-ldflags "-s -w"`：
 
-```make
-build-<bin>:
-	@echo "Building <bin>..."
-	cd clitool/<tool_dir> && go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/<bin> .
+根目录 `Makefile` 用 `$(eval $(call cli,...))` 注册工具，不要再手写 `cd`：
 
-linux-<bin>:
-	@echo "Building <bin> for Linux..."
-	cd clitool/<tool_dir> && GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o ../../$(BIN_DIR)/clitool/<bin>-linux .
+```make
+$(eval $(call cli,<bin>,clitool/<tool_dir>,<bin>,<bin>,$(STRIP)))
 ```
 
-并挂到 `build-clitool` / `linux-clitool`。
+并挂到 `build-clitool` / `linux-clitool`。配方是 `go -C <dir> build`，`-o $$(pwd)/bin/clitool/<bin>`。
 
 ## README
 

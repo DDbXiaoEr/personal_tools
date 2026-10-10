@@ -175,9 +175,19 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tab = shellrc.KindFunctions
 		m.clampCursor()
 	case "tab":
+		if m.cycleEnv(1) {
+			return m, nil
+		}
 		m.nextTab()
 	case "shift+tab":
+		if m.cycleEnv(-1) {
+			return m, nil
+		}
 		m.prevTab()
+	case " ":
+		if m.cycleEnv(1) {
+			return m, nil
+		}
 	case "?":
 		m.showHelp = !m.showHelp
 	case "o":
@@ -209,6 +219,20 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *model) cycleEnv(delta int) bool {
+	if m.tab != shellrc.KindEnv {
+		return false
+	}
+	it := m.currentItem()
+	if it == nil || !it.Cycle(delta) {
+		return false
+	}
+	m.dirty[m.tab] = true
+	cur, total := it.ValueIndex()
+	m.setOK(fmt.Sprintf("%s → %s  (%d/%d)，按 s 保存", it.Name, it.Value, cur, total))
+	return true
 }
 
 func (m *model) nextTab() {
@@ -379,6 +403,7 @@ func (m *model) buildForm(it *shellrc.Item) {
 		name := newText("名称", "PATH")
 		value := newText("值", "$HOME/bin:$PATH")
 		body := newArea("内容", "[ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"", 8)
+		alts := newArea("备选值", "每行一个，例如：\nhttp://127.0.0.1:7890\nsocks5://127.0.0.1:1080", 5)
 		if it != nil {
 			category.setText(cat)
 			name.setText(it.Name)
@@ -386,6 +411,9 @@ func (m *model) buildForm(it *shellrc.Item) {
 				body.setArea(it.Value)
 			} else {
 				value.setText(it.Value)
+				if others := shellrc.NormalizeAlts(it.Value, it.Alts); len(others) > 0 {
+					alts.setArea(strings.Join(others, "\n"))
+				}
 			}
 		} else {
 			category.setText(cat)
@@ -394,6 +422,7 @@ func (m *model) buildForm(it *shellrc.Item) {
 			snippet := frm.fields[1].choiceValue() == "snippet"
 			frm.fields[3].hidden = snippet
 			frm.fields[4].hidden = !snippet
+			frm.fields[5].hidden = snippet
 			if snippet {
 				frm.fields[2].label = "标签"
 				frm.fields[2].input.Placeholder = "nvm"
@@ -404,7 +433,7 @@ func (m *model) buildForm(it *shellrc.Item) {
 		}
 		style.onChoice = applyEnvVisibility
 		f.title = title
-		f.add(category, style, name, value, body)
+		f.add(category, style, name, value, body, alts)
 		applyEnvVisibility(&f)
 	case shellrc.KindFunctions:
 		title := "新增函数"
@@ -516,24 +545,28 @@ func (m *model) itemFromForm() (*shellrc.Item, error) {
 			if name == "" {
 				return nil, fmt.Errorf("名称不能为空")
 			}
+			val := m.form.fields[3].input.Value()
 			return &shellrc.Item{
 				Category: cat,
 				Name:     name,
-				Value:    m.form.fields[3].input.Value(),
+				Value:    val,
+				Alts:     shellrc.NormalizeAlts("", append([]string{val}, shellrc.ParseAltLines(m.form.fields[5].areaText())...)),
 				Style:    shellrc.StyleAssign,
-				Quote:    inferQuote(m.form.fields[3].input.Value()),
+				Quote:    inferQuote(val),
 			}, nil
 		default:
 			name := m.form.fields[2].text()
 			if name == "" {
 				return nil, fmt.Errorf("名称不能为空")
 			}
+			val := m.form.fields[3].input.Value()
 			return &shellrc.Item{
 				Category: cat,
 				Name:     name,
-				Value:    m.form.fields[3].input.Value(),
+				Value:    val,
+				Alts:     shellrc.NormalizeAlts("", append([]string{val}, shellrc.ParseAltLines(m.form.fields[5].areaText())...)),
 				Style:    shellrc.StyleExport,
-				Quote:    inferQuote(m.form.fields[3].input.Value()),
+				Quote:    inferQuote(val),
 			}, nil
 		}
 	default:
@@ -667,14 +700,21 @@ func (m model) bodyView() string {
 }
 
 func styleTag(it *shellrc.Item) string {
+	var parts []string
+	if it.CanCycle() {
+		cur, total := it.ValueIndex()
+		parts = append(parts, fmt.Sprintf("%d/%d", cur, total))
+	}
 	switch it.Style {
 	case shellrc.StyleAssign:
-		return dimStyle.Render("  assign")
+		parts = append(parts, "assign")
 	case shellrc.StyleSnippet:
-		return dimStyle.Render("  snippet")
-	default:
+		parts = append(parts, "snippet")
+	}
+	if len(parts) == 0 {
 		return ""
 	}
+	return dimStyle.Render("  " + strings.Join(parts, " "))
 }
 
 func (m model) listRows() int {
@@ -689,6 +729,9 @@ func (m model) listRows() int {
 }
 
 func (m model) helpLine() string {
+	if m.tab == shellrc.KindEnv {
+		return "1/2/3 切换 · tab/空格 切值 · a 新增 · enter/e 编辑 · d 删除 · s 保存 · r 重载 · o 切换 shell · ? 帮助 · q 退出"
+	}
 	return "1/2/3 切换 · a 新增 · enter/e 编辑 · d 删除 · s 保存 · r 重载 · o 切换 shell · ? 帮助 · q 退出"
 }
 
@@ -698,6 +741,8 @@ func (m model) helpView() string {
 			"  · 文件：~/.{zsh,bash}_{alias,env,functions}，按分类注释分组写出。\n" +
 			"  · 修改先留在内存，按 s 只写回当前标签对应文件，并生成 .bak。\n" +
 			"  · Env 类型：export / assign / snippet（nvm source、多行脚本等）。\n" +
+			"  · export/assign 可写多个备选值，列表中 tab / shift+tab / 空格循环切换。\n" +
+			"  · 无备选值时 tab 仍切换标签页。备选值以 # alt: 写在变量下一行。\n" +
 			"  · 函数体和 snippet 在表单 textarea 中编辑，ctrl+s 应用。\n" +
 			"  · 本工具不修改 ~/.zshrc / ~/.bashrc，请自行 source 这些文件。")
 }

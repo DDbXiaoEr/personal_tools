@@ -51,8 +51,96 @@ type Item struct {
 	Category string
 	Name     string
 	Value    string
+	Alts     []string
 	Style    Style
 	Quote    Quote
+}
+
+func (it *Item) allValues() []string {
+	if it == nil {
+		return nil
+	}
+	all := NormalizeAlts("", it.Alts)
+	if strings.TrimSpace(it.Value) == "" {
+		return all
+	}
+	for _, a := range all {
+		if a == it.Value {
+			return all
+		}
+	}
+	return append([]string{it.Value}, all...)
+}
+
+func (it *Item) CanCycle() bool {
+	if it == nil {
+		return false
+	}
+	if it.Style != StyleExport && it.Style != StyleAssign {
+		return false
+	}
+	return len(it.allValues()) > 1
+}
+
+func (it *Item) Cycle(delta int) bool {
+	if !it.CanCycle() {
+		return false
+	}
+	all := it.allValues()
+	idx := 0
+	for i, a := range all {
+		if a == it.Value {
+			idx = i
+			break
+		}
+	}
+	n := len(all)
+	idx = (idx + delta) % n
+	if idx < 0 {
+		idx += n
+	}
+	it.Value = all[idx]
+	it.Alts = all
+	return true
+}
+
+func (it *Item) ValueIndex() (int, int) {
+	all := it.allValues()
+	if len(all) == 0 {
+		return 0, 0
+	}
+	for i, a := range all {
+		if a == it.Value {
+			return i + 1, len(all)
+		}
+	}
+	return 1, len(all)
+}
+
+func NormalizeAlts(value string, alts []string) []string {
+	seen := map[string]bool{strings.TrimSpace(value): true}
+	var out []string
+	for _, a := range alts {
+		a = strings.TrimSpace(a)
+		if a == "" || seen[a] {
+			continue
+		}
+		seen[a] = true
+		out = append(out, a)
+	}
+	return out
+}
+
+func ParseAltLines(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
 }
 
 func (it *Item) Cat() string {

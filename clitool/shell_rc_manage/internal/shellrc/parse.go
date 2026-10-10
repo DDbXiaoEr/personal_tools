@@ -13,6 +13,7 @@ var (
 	reCategoryDash  = regexp.MustCompile(`^#\s*-{2,}\s*(.*?)\s*-{2,}\s*$`)
 	reCategoryPlain = regexp.MustCompile(`^#\s*(.+?)\s*$`)
 	reSnippetName   = regexp.MustCompile(`^#\s*name:\s*(.+?)\s*$`)
+	reAlt           = regexp.MustCompile(`^#\s*alt:\s*(.*)$`)
 	reAlias         = regexp.MustCompile(`^alias\s+([A-Za-z0-9_./+:@-]+)=(.*)$`)
 	reExport        = regexp.MustCompile(`^export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 	reAssign        = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
@@ -70,8 +71,15 @@ func Parse(src string, kind Kind) *File {
 		}
 		if item, n, ok := parseTypedItem(kind, lines, i); ok {
 			item.Category = cat
+			if extra := attachAlts(item, lines, i+n); extra > 0 {
+				n += extra
+			}
 			f.Items = append(f.Items, item)
 			i += n
+			continue
+		}
+		if _, ok := parseAlt(trimmed); ok {
+			i++
 			continue
 		}
 		body, n := collectSnippet(kind, lines, i)
@@ -110,6 +118,9 @@ func parseCategory(trimmed string) (string, bool) {
 	if reSnippetName.MatchString(trimmed) {
 		return "", false
 	}
+	if reAlt.MatchString(trimmed) {
+		return "", false
+	}
 	if m := reCategoryPlain.FindStringSubmatch(trimmed); m != nil {
 		name := strings.TrimSpace(m[1])
 		if name == "" || strings.HasPrefix(name, "!") {
@@ -118,6 +129,55 @@ func parseCategory(trimmed string) (string, bool) {
 		return name, true
 	}
 	return "", false
+}
+
+func parseAlt(trimmed string) (string, bool) {
+	m := reAlt.FindStringSubmatch(trimmed)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
+}
+
+func attachAlts(item *Item, lines []string, i int) int {
+	if item == nil || (item.Style != StyleExport && item.Style != StyleAssign) {
+		return 0
+	}
+	alts, n := collectAlts(lines, i)
+	if strings.TrimSpace(item.Value) != "" {
+		found := false
+		for _, a := range alts {
+			if a == item.Value {
+				found = true
+				break
+			}
+		}
+		if !found {
+			alts = append([]string{item.Value}, alts...)
+		}
+	}
+	item.Alts = NormalizeAlts("", alts)
+	return n
+}
+
+func collectAlts(lines []string, i int) ([]string, int) {
+	var alts []string
+	n := 0
+	for i+n < len(lines) {
+		trimmed := strings.TrimSpace(lines[i+n])
+		if trimmed == "" {
+			break
+		}
+		val, ok := parseAlt(trimmed)
+		if !ok {
+			break
+		}
+		if val != "" {
+			alts = append(alts, val)
+		}
+		n++
+	}
+	return alts, n
 }
 
 func parseSnippetName(trimmed string) (string, bool) {
@@ -312,6 +372,9 @@ func collectSnippet(kind Kind, lines []string, i int) (string, int) {
 			break
 		}
 		if _, ok := parseSnippetName(trimmed); ok && n > 0 {
+			break
+		}
+		if _, ok := parseAlt(trimmed); ok {
 			break
 		}
 		if _, _, ok := parseTypedItem(kind, lines, i+n); ok {

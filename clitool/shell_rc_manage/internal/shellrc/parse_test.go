@@ -269,6 +269,82 @@ func TestLoadStore(t *testing.T) {
 	}
 }
 
+func TestParseEnvAlts(t *testing.T) {
+	src := `# ===== proxy =====
+export HTTP_PROXY=http://127.0.0.1:7890
+# alt: http://127.0.0.1:1087
+# alt: 
+# alt: socks5://127.0.0.1:1080
+FOO=a
+# alt: a
+# alt: b
+`
+	f := Parse(src, KindEnv)
+	if len(f.Items) != 2 {
+		t.Fatalf("items = %d: %#v", len(f.Items), names(f))
+	}
+	if f.Items[0].Name != "HTTP_PROXY" || f.Items[0].Value != "http://127.0.0.1:7890" {
+		t.Fatalf("item0 = %+v", f.Items[0])
+	}
+	if got := strings.Join(f.Items[0].Alts, ","); got != "http://127.0.0.1:7890,http://127.0.0.1:1087,socks5://127.0.0.1:1080" {
+		t.Fatalf("alts = %q", got)
+	}
+	if got := strings.Join(f.Items[1].Alts, ","); got != "a,b" {
+		t.Fatalf("FOO alts should keep current once: %q", got)
+	}
+}
+
+func TestEnvAltRoundTrip(t *testing.T) {
+	src := `export HTTP_PROXY=http://a
+# alt: http://b
+# alt: http://c
+`
+	f := Parse(src, KindEnv)
+	out := f.String()
+	if !strings.Contains(out, "# alt: http://a") || !strings.Contains(out, "# alt: http://b") || !strings.Contains(out, "# alt: http://c") {
+		t.Fatalf("alts lost:\n%s", out)
+	}
+	f2 := Parse(out, KindEnv)
+	if len(f2.Items) != 1 {
+		t.Fatalf("count = %d\n%s", len(f2.Items), out)
+	}
+	if strings.Join(f2.Items[0].Alts, ",") != "http://a,http://b,http://c" {
+		t.Fatalf("alts = %#v", f2.Items[0].Alts)
+	}
+	f.Items[0].Cycle(1)
+	out2 := f.String()
+	f3 := Parse(out2, KindEnv)
+	if f3.Items[0].Value != "http://b" {
+		t.Fatalf("active = %q\n%s", f3.Items[0].Value, out2)
+	}
+	if strings.Join(f3.Items[0].Alts, ",") != "http://a,http://b,http://c" {
+		t.Fatalf("order lost: %#v\n%s", f3.Items[0].Alts, out2)
+	}
+}
+
+func TestCycleEnv(t *testing.T) {
+	it := &Item{Name: "HTTP_PROXY", Value: "a", Alts: []string{"a", "b", "c"}, Style: StyleExport}
+	if !it.Cycle(1) {
+		t.Fatal("cycle failed")
+	}
+	if it.Value != "b" {
+		t.Fatalf("after +1: value=%q", it.Value)
+	}
+	if cur, total := it.ValueIndex(); cur != 2 || total != 3 {
+		t.Fatalf("index = %d/%d", cur, total)
+	}
+	if !it.Cycle(-1) {
+		t.Fatal("cycle back failed")
+	}
+	if it.Value != "a" {
+		t.Fatalf("after -1: value=%q", it.Value)
+	}
+	single := &Item{Name: "FOO", Value: "x", Style: StyleExport}
+	if single.CanCycle() || single.Cycle(1) {
+		t.Fatal("single value should not cycle")
+	}
+}
+
 func TestNormalizeShell(t *testing.T) {
 	if got := NormalizeShell("/bin/zsh"); got != "zsh" {
 		t.Fatalf("got %q", got)

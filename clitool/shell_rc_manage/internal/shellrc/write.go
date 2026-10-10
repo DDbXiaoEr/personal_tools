@@ -40,11 +40,13 @@ func writeItem(b *strings.Builder, it *Item) {
 		b.WriteByte('=')
 		b.WriteString(formatValue(it))
 		b.WriteByte('\n')
+		writeAlts(b, it)
 	case StyleAssign:
 		b.WriteString(it.Name)
 		b.WriteByte('=')
 		b.WriteString(formatValue(it))
 		b.WriteByte('\n')
+		writeAlts(b, it)
 	case StyleFunction:
 		b.WriteString(it.Name)
 		b.WriteString("() {\n")
@@ -66,6 +68,18 @@ func writeItem(b *strings.Builder, it *Item) {
 		if it.Value != "" && !strings.HasSuffix(it.Value, "\n") {
 			b.WriteByte('\n')
 		}
+	}
+}
+
+func writeAlts(b *strings.Builder, it *Item) {
+	all := it.allValues()
+	if len(all) <= 1 {
+		return
+	}
+	for _, a := range all {
+		b.WriteString("# alt: ")
+		b.WriteString(a)
+		b.WriteByte('\n')
 	}
 }
 

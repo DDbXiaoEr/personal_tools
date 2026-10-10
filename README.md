@@ -35,12 +35,28 @@ markdown2pdf input.md
 
 ### ssh_config_manage
 
-SSH 配置文件管理 TUI 工具，基于 Bubble Tea 构建。方便查看、编辑和管理多台服务器的 SSH 连接配置。
+SSH 配置文件管理 TUI 工具，基于 Bubble Tea 构建。方便查看、编辑和管理多台服务器的 SSH 连接配置。支持复制已有主机、一次添加多台。
 
 ```bash
 # 使用
 sshman -file ~/.ssh/config
 ```
+
+**快捷键：**
+
+| 按键 | 说明 |
+|------|------|
+| `a` | 新增一台 |
+| `A` | 批量新增（公共 User/Port/密钥 + 每行一台） |
+| `c` | 复制当前主机，别名自动加后缀 |
+| `enter` / `e` | 编辑 |
+| `d` | 删除（需确认） |
+| `s` | 保存到文件 |
+| `q` | 退出 |
+
+批量行格式：`别名 [主机 [用户 [端口]]]`。只填一项时别名与 HostName 相同。公共选项应用到每一台，行内 User/Port 可覆盖。
+
+表单中 `tab` 切字段，`ctrl+s` 应用到内存，`esc` 取消。保存时才写盘。
 
 ### viewcsv_xlsx
 
@@ -85,7 +101,13 @@ alias dim='docker images'
 alias dps='docker ps'
 ```
 
-Env 支持三种形态：`export KEY=value`、`KEY=value`、以及 nvm/bun 这类多行 snippet。
+Env 支持三种形态：`export KEY=value`、`KEY=value`、以及 nvm/bun 这类多行 snippet。export / assign 可写多个备选值，列表里用 `tab` / `shift+tab` / 空格循环切换当前值（无备选时 `tab` 仍切标签页）。备选值以 `# alt:` 写在变量下一行：
+
+```sh
+export HTTP_PROXY=http://127.0.0.1:7890
+# alt: http://127.0.0.1:1087
+# alt: socks5://127.0.0.1:1080
+```
 
 ```bash
 # 使用（默认当前 $SHELL，目录 $HOME）
@@ -102,6 +124,8 @@ shellman -dir /custom
 |------|------|
 | `1` / `2` / `3` | 切换 Alias / Env / Functions |
 | `↑` `↓` / `j` `k` | 移动光标 |
+| `tab` / `shift+tab` | Env 有备选值时切换当前值；否则切换标签页 |
+| `空格` | Env 有备选值时切换当前值 |
 | `a` | 新增 |
 | `enter` / `e` | 编辑 |
 | `d` | 删除（需确认） |

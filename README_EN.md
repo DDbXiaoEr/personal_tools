@@ -35,12 +35,28 @@ markdown2pdf input.md
 
 ### ssh_config_manage
 
-TUI tool for managing SSH config files, built with Bubble Tea. Convenient for viewing, editing, and managing SSH connections to multiple servers.
+TUI tool for managing SSH config files, built with Bubble Tea. Convenient for viewing, editing, and managing SSH connections to multiple servers. Supports cloning a host and adding many hosts at once.
 
 ```bash
 # Usage
 sshman -file ~/.ssh/config
 ```
+
+**Keys:**
+
+| Key | Action |
+|-----|--------|
+| `a` | Add one host |
+| `A` | Bulk add (shared User/Port/key + one host per line) |
+| `c` | Clone the current host; alias gets a numeric suffix |
+| `enter` / `e` | Edit |
+| `d` | Delete (confirm) |
+| `s` | Save to file |
+| `q` | Quit |
+
+Bulk line format: `alias [hostname [user [port]]]`. A single field is used as both alias and HostName. Shared options apply to every host; per-line User/Port override them.
+
+In forms, `tab` moves fields, `ctrl+s` applies to memory, `esc` cancels. Disk write happens only on save.
 
 ### viewcsv_xlsx
 
@@ -85,7 +101,13 @@ alias dim='docker images'
 alias dps='docker ps'
 ```
 
-Env entries support `export KEY=value`, `KEY=value`, and multi-line snippets (nvm/bun loaders, etc.).
+Env entries support `export KEY=value`, `KEY=value`, and multi-line snippets (nvm/bun loaders, etc.). export / assign can keep alternate values; in the list, `tab` / `shift+tab` / space cycles the active value (with no alternates, `tab` still switches tabs). Alternates are stored as `# alt:` lines under the variable:
+
+```sh
+export HTTP_PROXY=http://127.0.0.1:7890
+# alt: http://127.0.0.1:1087
+# alt: socks5://127.0.0.1:1080
+```
 
 ```bash
 # Usage (defaults to current $SHELL and $HOME)
@@ -102,6 +124,8 @@ shellman -dir /custom
 |-----|--------|
 | `1` / `2` / `3` | Switch Alias / Env / Functions |
 | `↑` `↓` / `j` `k` | Move cursor |
+| `tab` / `shift+tab` | Cycle env value when alternates exist; otherwise switch tabs |
+| `space` | Cycle env value when alternates exist |
 | `a` | Add |
 | `enter` / `e` | Edit |
 | `d` | Delete (with confirmation) |

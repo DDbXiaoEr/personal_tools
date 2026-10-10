@@ -2,6 +2,7 @@ package sshconfig
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,47 @@ func (h *Host) Set(key, value string) {
 		return
 	}
 	h.Options = append(h.Options, Option{Key: key, Value: value})
+}
+
+func (h *Host) Clone() *Host {
+	if h == nil {
+		return &Host{}
+	}
+	c := &Host{Name: h.Name}
+	if len(h.Options) > 0 {
+		c.Options = make([]Option, len(h.Options))
+		copy(c.Options, h.Options)
+	}
+	return c
+}
+
+func (c *Config) HasHost(name string) bool {
+	for _, h := range c.Hosts {
+		if h.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func UniqueHostName(hosts []*Host, base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "host"
+	}
+	used := make(map[string]bool, len(hosts))
+	for _, h := range hosts {
+		used[h.Name] = true
+	}
+	if !used[base] {
+		return base
+	}
+	for i := 2; ; i++ {
+		cand := fmt.Sprintf("%s-%d", base, i)
+		if !used[cand] {
+			return cand
+		}
+	}
 }
 
 type Config struct {

@@ -17,7 +17,9 @@ type mode int
 const (
 	modeList mode = iota
 	modeForm
+	modeBulk
 	modeConfirmDelete
+	modeConfirmQuit
 )
 
 var knownKeys = []string{"HostName", "User", "Port", "IdentityFile", "ProxyJump"}
@@ -50,6 +52,10 @@ type model struct {
 	focus   int
 	editing *sshconfig.Host
 
+	bulkInputs []textinput.Model
+	bulkLabels []string
+	bulkHosts  textarea.Model
+
 	width  int
 	height int
 }
@@ -60,6 +66,10 @@ func newModel(path string, cfg *sshconfig.Config) model {
 	m.extra.Placeholder = "每行一条，例如：\nForwardAgent yes\nLocalForward 8080 localhost:80"
 	m.extra.ShowLineNumbers = false
 	m.extra.SetHeight(4)
+	m.bulkHosts = textarea.New()
+	m.bulkHosts.Placeholder = "每行一台，例如：\nweb-1 10.0.0.1\nweb-2 10.0.0.2 root 22\n10.0.0.3"
+	m.bulkHosts.ShowLineNumbers = false
+	m.bulkHosts.SetHeight(8)
 	return m
 }
 
@@ -105,6 +115,35 @@ func (m *model) loadHostIntoForm(h *sshconfig.Host) {
 	}
 	m.focus = 0
 	m.inputs[0].Focus()
+}
+
+func (m *model) loadBulkForm() {
+	defs := []struct{ label, placeholder string }{
+		{"User", "root"},
+		{"Port", "22"},
+		{"IdentityFile", "~/.ssh/id_rsa"},
+		{"ProxyJump", "bastion"},
+	}
+	m.bulkInputs = make([]textinput.Model, len(defs))
+	m.bulkLabels = make([]string, len(defs))
+	for i, d := range defs {
+		ti := textinput.New()
+		ti.Placeholder = d.placeholder
+		ti.Prompt = ""
+		ti.CharLimit = 256
+		m.bulkInputs[i] = ti
+		m.bulkLabels[i] = d.label
+	}
+	if n := len(m.cfg.Hosts); n > 0 {
+		h := m.cfg.Hosts[m.cursor]
+		vals := []string{h.Get("User"), h.Get("Port"), h.Get("IdentityFile"), h.Get("ProxyJump")}
+		for i, v := range vals {
+			m.bulkInputs[i].SetValue(v)
+		}
+	}
+	m.bulkHosts.SetValue("")
+	m.focus = 0
+	m.bulkInputs[0].Focus()
 }
 
 func isKnown(key string) bool {
@@ -154,7 +193,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateList(msg)
 		case modeForm:
 			return m.updateForm(msg)
-		case modeConfirmDelete:
+		case modeBulk:
+			return m.updateBulk(msg)
+		case modeConfirmDelete, modeConfirmQuit:
 			return m.updateConfirm(msg)
 		}
 	}
@@ -165,6 +206,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	n := len(m.cfg.Hosts)
 	switch msg.String() {
 	case "q", "ctrl+c":
+		if m.dirty {
+			m.mode = modeConfirmQuit
+			return m, nil
+		}
 		return m, tea.Quit
 	case "up", "k":
 		if m.cursor > 0 {
@@ -185,6 +230,22 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editing = nil
 		m.msg = ""
 		m.loadHostIntoForm(nil)
+		return m, textinput.Blink
+	case "c":
+		if n > 0 {
+			src := m.cfg.Hosts[m.cursor]
+			dup := src.Clone()
+			dup.Name = sshconfig.UniqueHostName(m.cfg.Hosts, src.Name)
+			m.mode = modeForm
+			m.editing = nil
+			m.msg = ""
+			m.loadHostIntoForm(dup)
+			return m, textinput.Blink
+		}
+	case "A":
+		m.mode = modeBulk
+		m.msg = ""
+		m.loadBulkForm()
 		return m, textinput.Blink
 	case "enter", "e":
 		if n > 0 {
@@ -207,6 +268,9 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
+		if m.mode == modeConfirmQuit {
+			return m, tea.Quit
+		}
 		if m.cursor < len(m.cfg.Hosts) {
 			m.cfg.Hosts = append(m.cfg.Hosts[:m.cursor], m.cfg.Hosts[m.cursor+1:]...)
 			if m.cursor >= len(m.cfg.Hosts) && m.cursor > 0 {
@@ -231,6 +295,11 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "ctrl+s":
 		h := m.buildHostFromForm()
+		if m.editing == nil && m.cfg.HasHost(h.Name) {
+			m.msg = fmt.Sprintf("别名 %q 已存在", h.Name)
+			m.isErr = true
+			return m, nil
+		}
 		if m.editing != nil {
 			m.editing.Name = h.Name
 			m.editing.Options = h.Options
@@ -273,6 +342,86 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m model) updateBulk(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	total := len(m.bulkInputs) + 1
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.mode = modeList
+		return m, nil
+	case "ctrl+s":
+		if err := m.submitBulk(); err != nil {
+			m.msg = err.Error()
+			m.isErr = true
+			return m, nil
+		}
+		return m, nil
+	case "tab", "down":
+		m.focus = (m.focus + 1) % total
+	case "shift+tab", "up":
+		m.focus = (m.focus - 1 + total) % total
+	case "enter":
+		if m.focus < len(m.bulkInputs) {
+			m.focus++
+			if m.focus > len(m.bulkInputs)-1 {
+				m.focus = len(m.bulkInputs)
+			}
+		}
+	}
+
+	for i := range m.bulkInputs {
+		if i == m.focus {
+			m.bulkInputs[i].Focus()
+		} else {
+			m.bulkInputs[i].Blur()
+		}
+	}
+	var cmd tea.Cmd
+	if m.focus < len(m.bulkInputs) {
+		m.bulkInputs[m.focus], cmd = m.bulkInputs[m.focus].Update(msg)
+		m.bulkHosts.Blur()
+	} else {
+		m.bulkHosts.Focus()
+		m.bulkHosts, cmd = m.bulkHosts.Update(msg)
+	}
+	return m, cmd
+}
+
+func (m *model) submitBulk() error {
+	entries, err := sshconfig.ParseBulkLines(m.bulkHosts.Value())
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if m.cfg.HasHost(e.Alias) {
+			return fmt.Errorf("别名 %q 已存在", e.Alias)
+		}
+	}
+	shared := m.bulkSharedOptions()
+	for _, e := range entries {
+		m.cfg.Hosts = append(m.cfg.Hosts, e.ToHost(shared))
+	}
+	m.cursor = len(m.cfg.Hosts) - 1
+	m.dirty = true
+	m.mode = modeList
+	m.msg = fmt.Sprintf("已添加 %d 台主机，按 s 保存到文件", len(entries))
+	m.isErr = false
+	return nil
+}
+
+func (m *model) bulkSharedOptions() []sshconfig.Option {
+	keys := []string{"User", "Port", "IdentityFile", "ProxyJump"}
+	var opts []sshconfig.Option
+	for i, key := range keys {
+		v := strings.TrimSpace(m.bulkInputs[i].Value())
+		if v != "" {
+			opts = append(opts, sshconfig.Option{Key: key, Value: v})
+		}
+	}
+	return opts
+}
+
 func (m *model) save() {
 	if err := m.cfg.SaveFile(m.path); err != nil {
 		m.msg = "保存失败: " + err.Error()
@@ -288,8 +437,12 @@ func (m model) View() string {
 	switch m.mode {
 	case modeForm:
 		return m.formView()
+	case modeBulk:
+		return m.bulkView()
 	case modeConfirmDelete:
 		return m.listView() + "\n\n" + errStyle.Render(fmt.Sprintf("确定删除 %q ? (y/n)", m.cfg.Hosts[m.cursor].Name))
+	case modeConfirmQuit:
+		return m.listView() + "\n\n" + errStyle.Render("有未保存的修改，确定退出 ? (y/n)")
 	default:
 		return m.listView()
 	}
@@ -353,7 +506,7 @@ func (m model) listView() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString(helpStyle.Render("a 新增 · enter/e 编辑 · d 删除 · s 保存 · q 退出"))
+	b.WriteString(helpStyle.Render("a 新增 · A 批量 · c 复制 · enter/e 编辑 · d 删除 · s 保存 · q 退出"))
 	return b.String()
 }
 
@@ -385,7 +538,46 @@ func (m model) formView() string {
 	b.WriteString("\n")
 	b.WriteString(m.extra.View())
 	b.WriteString("\n")
+	if m.msg != "" && m.isErr {
+		b.WriteString(errStyle.Render(m.msg))
+		b.WriteString("\n")
+	}
+	b.WriteString(helpStyle.Render("tab/shift+tab 切换 · ctrl+s 确认 · esc 取消"))
+	return b.String()
+}
 
+func (m model) bulkView() string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("批量新增主机"))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("公共选项应用到每一台；主机行可覆盖 User / Port。"))
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("每行格式：别名 [主机 [用户 [端口]]]，仅填一项时别名与 HostName 相同。"))
+	b.WriteString("\n\n")
+
+	for i, in := range m.bulkInputs {
+		label := labelStyle
+		if i == m.focus {
+			label = focusedLabel
+		}
+		b.WriteString(label.Render(m.bulkLabels[i]))
+		b.WriteString(in.View())
+		b.WriteString("\n")
+	}
+
+	label := labelStyle
+	if m.focus >= len(m.bulkInputs) {
+		label = focusedLabel
+	}
+	b.WriteString("\n")
+	b.WriteString(label.Render("主机列表"))
+	b.WriteString("\n")
+	b.WriteString(m.bulkHosts.View())
+	b.WriteString("\n")
+	if m.msg != "" && m.isErr {
+		b.WriteString(errStyle.Render(m.msg))
+		b.WriteString("\n")
+	}
 	b.WriteString(helpStyle.Render("tab/shift+tab 切换 · ctrl+s 确认 · esc 取消"))
 	return b.String()
 }
