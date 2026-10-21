@@ -153,7 +153,7 @@ In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Function bodies a
 TUI tool for managing opencode configuration, built with Bubble Tea. Manage the global or project `opencode.json` while preserving comments, key order, and untouched fields.
 
 **Features:**
-- **Provider**: add/edit/delete custom providers (`id` / `name` / `npm` / `options.baseURL` / `options.apiKey`). Press `v` to manage `models.variants` (`disabled` plus per-line `KEY=value` options). Keys not exposed in the form (e.g. `blacklist`) are preserved as-is.
+- **Provider**: add/edit/delete custom providers (`id` / `name` / `npm` / `options.baseURL` / `options.apiKey`). After `baseURL` and `apiKey` are set, press `f` (or the form button) to fetch OpenAI-compatible `/models` into `provider.models`; existing models only fill empty names and keep variants. New providers with no models auto-fetch on `ctrl+s`. `apiKey` accepts `{env:VAR}`. Press `v` to manage `models.variants` (`disabled` plus per-line `KEY=value` options). Keys not exposed in the form (e.g. `blacklist`) are preserved as-is.
 - **MCP**: manage both `local` and `remote` servers covering `command`, `environment`, `cwd`, `url`, `headers`, `oauth`, `timeout`, `enabled`; press space to toggle enable/disable from the list.
 - **Skills**: browse global `~/.config/opencode/skills/*/SKILL.md`, validating frontmatter (`name` / `description`). Press `a` to download a zip from a URI and extract it under a chosen directory name; press `d` to delete a skill directory.
 - **Config source**: defaults to the global config; press `o` to switch to a project `opencode.json` found by walking up from the current directory.
@@ -174,6 +174,7 @@ occonfig -config /path/to/opencode.json -skills-dir ~/.config/opencode/skills
 | `↑` `↓` / `j` `k` | Move cursor |
 | `a` | Add (install from zip URI on Skills tab) |
 | `enter` / `e` | Edit (view full text on Skills tab) |
+| `f` | Fetch models from the current Provider API |
 | `v` | Manage variants for the current Provider |
 | `d` | Delete (with confirmation) |
 | `space` | Enable / disable MCP; disable / enable a variant in the variants list |

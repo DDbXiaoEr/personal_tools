@@ -54,6 +54,13 @@ type skillInstalledMsg struct {
 	err  error
 }
 
+type modelsFetchedMsg struct {
+	providerID string
+	models     []opencode.RemoteModel
+	err        error
+	fromForm   bool
+}
+
 var providerIDRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
 // MCP form field indexes.
@@ -71,7 +78,19 @@ const (
 	mcpFieldEnabled
 )
 
-const actionPickCommand = "pick-command"
+const (
+	actionPickCommand = "pick-command"
+	actionFetchModels = "fetch-models"
+)
+
+const (
+	provFieldID = iota
+	provFieldName
+	provFieldNPM
+	provFieldBaseURL
+	provFieldAPIKey
+	provFieldFetch
+)
 
 const (
 	varFieldModel = iota
@@ -123,6 +142,7 @@ type model struct {
 	isErr      bool
 	showHelp   bool
 	installing bool
+	fetching   bool
 }
 
 func newModel(cfg *opencode.Config, skillsDir string) model {
@@ -199,6 +219,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.setOK("已安装 " + msg.name)
 		return m, nil
+	case modelsFetchedMsg:
+		return m.applyFetchedModels(msg)
 	case tea.KeyMsg:
 		switch m.mode {
 		case modeForm:
@@ -268,6 +290,8 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleEnabled()
 	case "v":
 		m.openVariantList()
+	case "f":
+		return m.startFetchModels(false)
 	}
 	return m, nil
 }
@@ -317,6 +341,8 @@ func (m model) activateAction(action string) (tea.Model, tea.Cmd) {
 	switch action {
 	case actionPickCommand:
 		return m.openCommandPicker()
+	case actionFetchModels:
+		return m.startFetchModels(true)
 	}
 	return m, nil
 }
@@ -383,6 +409,19 @@ func (m model) submitForm() (tea.Model, tea.Cmd) {
 	}
 	if err != nil {
 		m.setErr(err.Error())
+		return m, nil
+	}
+	if m.formKind == "provider" {
+		id := m.form.fields[provFieldID].text()
+		p := opencode.ParseProvider(id, m.cfg.Provider(id))
+		isNew := m.editingProvider == ""
+		m.mode = modeList
+		m.formKind = ""
+		if isNew && len(p.Models) == 0 && strings.TrimSpace(p.BaseURL) != "" {
+			m.setOK("已更新，正在拉取模型…")
+			return m.beginFetch(id, p.BaseURL, p.APIKey, false)
+		}
+		m.setOK("已更新，按 s 保存到文件")
 		return m, nil
 	}
 	if m.formKind == "variant" {
@@ -643,17 +682,18 @@ func (m *model) buildProviderForm() {
 		newText("npm", "@ai-sdk/openai-compatible"),
 		newText("baseURL", "https://api.example.com/v1"),
 		newText("apiKey", "{env:MY_API_KEY}"),
+		newButton("从 API 拉取模型", actionFetchModels),
 	)
-	f.fields[1].setText(p.Name)
-	f.fields[2].setText(p.NPM)
-	f.fields[3].setText(p.BaseURL)
-	f.fields[4].setText(p.APIKey)
+	f.fields[provFieldName].setText(p.Name)
+	f.fields[provFieldNPM].setText(p.NPM)
+	f.fields[provFieldBaseURL].setText(p.BaseURL)
+	f.fields[provFieldAPIKey].setText(p.APIKey)
 	f.focusFirst()
 	m.form = *f
 }
 
 func (m *model) applyProviderForm() error {
-	id := m.form.fields[0].text()
+	id := m.form.fields[provFieldID].text()
 	if id == "" {
 		return fmt.Errorf("provider id 不能为空")
 	}
@@ -665,12 +705,16 @@ func (m *model) applyProviderForm() error {
 			return fmt.Errorf("provider %q 已存在", id)
 		}
 	}
-	p := opencode.ParseProvider(id, m.editingProviderRaw)
+	raw := m.editingProviderRaw
+	if existing, ok := m.cfg.Providers[id]; ok {
+		raw = existing
+	}
+	p := opencode.ParseProvider(id, raw)
 	p.ID = id
-	p.Name = m.form.fields[1].text()
-	p.NPM = m.form.fields[2].text()
-	p.BaseURL = m.form.fields[3].text()
-	p.APIKey = m.form.fields[4].text()
+	p.Name = m.form.fields[provFieldName].text()
+	p.NPM = m.form.fields[provFieldNPM].text()
+	p.BaseURL = m.form.fields[provFieldBaseURL].text()
+	p.APIKey = m.form.fields[provFieldAPIKey].text()
 	raw, err := p.Encode()
 	if err != nil {
 		return err
@@ -698,6 +742,100 @@ func (m *model) writeProvider(id string, p *opencode.Provider) error {
 	}
 	m.cfg.SetProvider(id, raw)
 	return nil
+}
+
+func (m model) startFetchModels(fromForm bool) (tea.Model, tea.Cmd) {
+	if m.fetching {
+		m.setErr("正在拉取模型，请稍候")
+		return m, nil
+	}
+	var id, baseURL, apiKey string
+	if fromForm {
+		if m.formKind != "provider" {
+			return m, nil
+		}
+		id = m.form.fields[provFieldID].text()
+		baseURL = m.form.fields[provFieldBaseURL].text()
+		apiKey = m.form.fields[provFieldAPIKey].text()
+		if id == "" {
+			m.setErr("请先填写 provider id")
+			return m, nil
+		}
+		if !providerIDRe.MatchString(id) {
+			m.setErr("provider id 只能包含小写字母、数字、. _ -，且以字母或数字开头")
+			return m, nil
+		}
+		if m.editingProvider == "" {
+			if _, ok := m.cfg.Providers[id]; ok {
+				m.setErr(fmt.Sprintf("provider %q 已存在", id))
+				return m, nil
+			}
+		}
+	} else {
+		if m.tab != tabProviders {
+			return m, nil
+		}
+		ids := m.cfg.ProviderIDs()
+		if len(ids) == 0 {
+			m.setErr("请先新增 Provider")
+			return m, nil
+		}
+		id = ids[m.provCursor]
+		if m.variantProvID != "" {
+			id = m.variantProvID
+		}
+		p := opencode.ParseProvider(id, m.cfg.Provider(id))
+		baseURL, apiKey = p.BaseURL, p.APIKey
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		m.setErr("请先填写 baseURL")
+		return m, nil
+	}
+	return m.beginFetch(id, baseURL, apiKey, fromForm)
+}
+
+func (m model) beginFetch(id, baseURL, apiKey string, fromForm bool) (tea.Model, tea.Cmd) {
+	m.fetching = true
+	m.setOK("正在从 API 拉取模型…")
+	return m, func() tea.Msg {
+		models, err := opencode.FetchModels(baseURL, apiKey)
+		return modelsFetchedMsg{providerID: id, models: models, err: err, fromForm: fromForm}
+	}
+}
+
+func (m model) applyFetchedModels(msg modelsFetchedMsg) (tea.Model, tea.Cmd) {
+	m.fetching = false
+	if msg.err != nil {
+		m.setErr(msg.err.Error())
+		return m, nil
+	}
+	if msg.fromForm {
+		if err := m.applyProviderForm(); err != nil {
+			m.setErr(err.Error())
+			return m, nil
+		}
+		if m.editingProvider == "" {
+			m.editingProvider = msg.providerID
+			m.form.fields[provFieldID].readOnly = true
+		}
+	}
+	raw := m.cfg.Provider(msg.providerID)
+	if len(raw) == 0 {
+		m.setErr("Provider " + msg.providerID + " 不存在，请先 ctrl+s 应用到内存")
+		return m, nil
+	}
+	p := opencode.ParseProvider(msg.providerID, raw)
+	added, updated := p.MergeRemoteModels(msg.models)
+	if added == 0 && updated == 0 {
+		m.setOK(fmt.Sprintf("已是最新，共 %d 个模型", len(p.Models)))
+		return m, nil
+	}
+	if err := m.writeProvider(msg.providerID, p); err != nil {
+		m.setErr(err.Error())
+		return m, nil
+	}
+	m.setOK(fmt.Sprintf("已拉取 %d 个模型（新增 %d，补全名称 %d），按 s 保存", len(msg.models), added, updated))
+	return m, nil
 }
 
 func (m *model) openVariantList() {
@@ -751,6 +889,8 @@ func (m model) updateVariantList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleVariant()
 	case "s":
 		m.save()
+	case "f":
+		return m.startFetchModels(false)
 	case "r":
 		m.reload()
 		if !m.cfg.Dirty() {
@@ -1181,7 +1321,16 @@ func (m *model) setCursor(v int) {
 func (m model) View() string {
 	switch m.mode {
 	case modeForm:
-		return boxStyle.Render(m.form.View())
+		s := boxStyle.Render(m.form.View())
+		if m.status != "" {
+			s += "\n"
+			if m.isErr {
+				s += errStyle.Render(m.status)
+			} else {
+				s += okStyle.Render(m.status)
+			}
+		}
+		return s
 	case modeConfirm:
 		base := m.listView()
 		if m.variantProvID != "" {
@@ -1276,7 +1425,7 @@ func (m model) variantListView() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString(helpStyle.Render("a 新增 · enter/e 编辑 · d 删除 · space 禁用 · s 保存 · esc 返回 · q 退出"))
+	b.WriteString(helpStyle.Render("a 新增 · enter/e 编辑 · f 拉取模型 · d 删除 · space 禁用 · s 保存 · esc 返回 · q 退出"))
 	if m.showHelp {
 		b.WriteString("\n\n")
 		b.WriteString(m.helpView())
@@ -1397,6 +1546,9 @@ func (m model) providersBody() string {
 		if keys := p.ExtraKeys(); len(keys) > 0 {
 			extra = dimStyle.Render(fmt.Sprintf("  [保留 %d 个键]", len(keys)))
 		}
+		if n := len(p.Models); n > 0 {
+			detail = strings.TrimSpace(detail + fmt.Sprintf(" · %d models", n))
+		}
 		if n := p.NumVariants(); n > 0 {
 			detail = strings.TrimSpace(detail + fmt.Sprintf(" · %d variants", n))
 		}
@@ -1472,7 +1624,7 @@ func (m model) skillsBody() string {
 func (m model) helpLine() string {
 	switch m.tab {
 	case tabProviders:
-		return "1/2/3 切换 · a 新增 · enter/e 编辑 · v variants · d 删除 · s 保存 · r 重载 · o 配置来源 · ? 帮助 · q 退出"
+		return "1/2/3 切换 · a 新增 · enter/e 编辑 · f 拉取模型 · v variants · d 删除 · s 保存 · r 重载 · o 配置来源 · ? 帮助 · q 退出"
 	case tabMCP:
 		return "1/2/3 切换 · a 新增 · enter/e 编辑 · d 删除 · space 启停 · s 保存 · r 重载 · o 配置来源 · q 退出"
 	default:
@@ -1486,6 +1638,8 @@ func (m model) helpView() string {
 			"  · 修改保存在内存中，按 s 写回文件（保留注释与未知字段）。\n" +
 			"  · 保存时会生成 <配置文件>.bak 备份。\n" +
 			"  · 编辑 provider/MCP 时名称不可修改（改名请删除后新增）。\n" +
+			"  · Provider 配好 baseURL 和 apiKey 后按 f（或表单按钮）从 /models 自动拉取模型；已有模型只补全空名称。\n" +
+			"  · 新增 Provider 且尚未配置模型时，ctrl+s 会自动拉取。apiKey 支持 {env:VAR}。\n" +
 			"  · Provider 按 v 管理 models.variants；options 每行 KEY=value，JSON 值原样保留。\n" +
 			"  · Provider 未在表单中暴露的键（如 blacklist）会被原样保留。\n" +
 			"  · MCP local 类型：Tab 到「浏览可执行文件」按钮按 Enter（或按 ctrl+f）选择可执行文件。\n" +

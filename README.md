@@ -153,7 +153,7 @@ shellman -dir /custom
 opencode 配置管理 TUI 工具，基于 Bubble Tea 构建。用于管理全局或项目的 `opencode.json`，写回时保留注释、键顺序和未编辑字段。
 
 **功能：**
-- **Provider**：增删改自定义 provider（`id` / `name` / `npm` / `options.baseURL` / `options.apiKey`）；按 `v` 管理 `models.variants`（`disabled` 与每行 `KEY=value` 的 options）；未在表单中暴露的键（如 `blacklist`）原样保留。
+- **Provider**：增删改自定义 provider（`id` / `name` / `npm` / `options.baseURL` / `options.apiKey`）。配好 `baseURL` 和 `apiKey` 后按 `f`（或表单「从 API 拉取模型」）请求 OpenAI 兼容的 `/models` 并写入 `provider.models`；已有模型只补全空名称，variants 原样保留。新增且尚未配置模型时，`ctrl+s` 会自动拉取。`apiKey` 支持 `{env:VAR}`。按 `v` 管理 `models.variants`（`disabled` 与每行 `KEY=value` 的 options）；未在表单中暴露的键（如 `blacklist`）原样保留。
 - **MCP**：管理 `local` / `remote` 两类 server，覆盖 `command`、`environment`、`cwd`、`url`、`headers`、`oauth`、`timeout`、`enabled`，列表中按空格快速启停。
 - **Skills**：浏览全局 `~/.config/opencode/skills/*/SKILL.md`，校验 frontmatter（`name` / `description`）；按 `a` 从 zip URI 下载并解压到指定目录名，按 `d` 删除技能目录。
 - **配置来源**：默认全局配置，按 `o` 可切换到从当前目录向上查找到的项目 `opencode.json`。
@@ -174,6 +174,7 @@ occonfig -config /path/to/opencode.json -skills-dir ~/.config/opencode/skills
 | `↑` `↓` / `j` `k` | 移动光标 |
 | `a` | 新增（Skills 页为从 zip URI 安装） |
 | `enter` / `e` | 编辑（Skills 页为查看全文） |
+| `f` | 从当前 Provider 的 API 拉取模型 |
 | `v` | 管理当前 Provider 的 variants |
 | `d` | 删除（需确认） |
 | `space` | 启用 / 禁用 MCP；variants 列表中禁用 / 启用 variant |
