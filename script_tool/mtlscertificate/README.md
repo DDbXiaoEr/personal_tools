@@ -15,8 +15,8 @@
 # 2. 签发服务端证书
 ./create-server.sh <CN> [输出目录] [有效天数] [SAN...]
 
-# 3. 签发客户端证书（可多次，不同 CN）
-./create-client.sh <CN> [输出目录] [有效天数]
+# 3. 签发客户端证书（可多次，不同 CN；可选 PKCS12 密码，默认空）
+./create-client.sh <CN> [输出目录] [有效天数] [PKCS12密码]
 ```
 
 示例：
@@ -26,7 +26,7 @@
 ./create-server.sh api.local
 ./create-server.sh db.local ./certs 3650 db.local 10.0.0.8
 ./create-client.sh alice
-./create-client.sh bob
+./create-client.sh bob ./certs 3650 changeit
 ```
 
 未指定 SAN 时，服务端默认包含：`CN`、`localhost`、`127.0.0.1`、`::1`。
@@ -47,7 +47,8 @@ certs/
 │   └── fullchain.crt    # 服务端证书 + CA
 └── client/<CN>/
     ├── client.key
-    └── client.crt
+    ├── client.crt
+    └── client.p12       # 私钥 + 证书 + CA，密码见第 4 个参数（默认空）
 ```
 
 ## 校验

@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# 用根 CA 签发 mTLS 客户端证书
-# 用法: ./create-client.sh <CN> [输出目录] [有效天数]
+# 用根 CA 签发 mTLS 客户端证书，并导出 PKCS12
+# 用法: ./create-client.sh <CN> [输出目录] [有效天数] [PKCS12密码]
 
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-    echo "用法: $0 <CN> [输出目录] [有效天数]" >&2
+    echo "用法: $0 <CN> [输出目录] [有效天数] [PKCS12密码]" >&2
     exit 1
 fi
 
 CN=$1
 OUTPUT_DIR=${2:-./certs}
 DAYS=${3:-3650}
+P12_PASS=${4:-}
 
 CA_DIR="$OUTPUT_DIR/ca"
 CA_KEY="$CA_DIR/ca.key"
@@ -28,6 +29,7 @@ CLIENT_DIR="$OUTPUT_DIR/client/$SAFE_CN"
 CLIENT_KEY="$CLIENT_DIR/client.key"
 CLIENT_CRT="$CLIENT_DIR/client.crt"
 CLIENT_CSR="$CLIENT_DIR/client.csr"
+CLIENT_P12="$CLIENT_DIR/client.p12"
 
 if ! command -v openssl >/dev/null 2>&1; then
     echo "未找到 openssl" >&2
@@ -89,9 +91,19 @@ openssl x509 -req -days "$DAYS" \
     -extfile "$TEMP_CNF" \
     -extensions v3_client
 
+openssl pkcs12 -export \
+    -inkey "$CLIENT_KEY" \
+    -in "$CLIENT_CRT" \
+    -certfile "$CA_CRT" \
+    -out "$CLIENT_P12" \
+    -name "$CN" \
+    -passout "pass:$P12_PASS"
+chmod 600 "$CLIENT_P12"
+
 echo "客户端证书签发完成"
 echo "私钥: $CLIENT_KEY"
 echo "证书: $CLIENT_CRT"
+echo "PKCS12: $CLIENT_P12"
 echo ""
 openssl x509 -in "$CLIENT_CRT" -noout -subject -dates
 openssl verify -CAfile "$CA_CRT" "$CLIENT_CRT"
