@@ -45,7 +45,7 @@ OU = CA
 CN = $CN
 
 [v3_ca]
-basicConstraints = critical, CA:TRUE
+basicConstraints = critical, CA:TRUE, pathlen:1
 keyUsage = critical, digitalSignature, keyCertSign, cRLSign
 subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid:always,issuer

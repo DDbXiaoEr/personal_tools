@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 用根 CA 签发 mTLS 服务端证书
+# 签发 mTLS 服务端证书（有二级 CA 则用二级 CA，否则用根 CA）
 # 用法: ./create-server.sh <CN> [输出目录] [有效天数] [SAN...]
 # SAN 未指定时默认: CN、localhost、127.0.0.1、::1
 
@@ -15,10 +15,14 @@ OUTPUT_DIR=${2:-./certs}
 DAYS=${3:-3650}
 shift $(( $# >= 3 ? 3 : $# ))
 
-CA_DIR="$OUTPUT_DIR/ca"
-CA_KEY="$CA_DIR/ca.key"
-CA_CRT="$CA_DIR/ca.crt"
-CA_SRL="$CA_DIR/ca.srl"
+ROOT_DIR="$OUTPUT_DIR/ca"
+ROOT_KEY="$ROOT_DIR/ca.key"
+ROOT_CRT="$ROOT_DIR/ca.crt"
+INT_DIR="$OUTPUT_DIR/intermediate"
+INT_KEY="$INT_DIR/intermediate.key"
+INT_CRT="$INT_DIR/intermediate.crt"
+INT_SRL="$INT_DIR/intermediate.srl"
+ROOT_SRL="$ROOT_DIR/ca.srl"
 
 SAFE_CN=$(printf '%s' "$CN" | tr '/:*' '___' | tr -cd 'A-Za-z0-9._-')
 if [[ -z "$SAFE_CN" ]]; then
@@ -37,9 +41,21 @@ if ! command -v openssl >/dev/null 2>&1; then
     exit 1
 fi
 
-if [[ ! -f "$CA_KEY" || ! -f "$CA_CRT" ]]; then
-    echo "未找到 CA，请先运行: ./create-ca.sh $OUTPUT_DIR" >&2
+if [[ ! -f "$ROOT_KEY" || ! -f "$ROOT_CRT" ]]; then
+    echo "未找到根 CA，请先运行: ./create-ca.sh $OUTPUT_DIR" >&2
     exit 1
+fi
+
+if [[ -f "$INT_KEY" && -f "$INT_CRT" ]]; then
+    SIGNER_KEY="$INT_KEY"
+    SIGNER_CRT="$INT_CRT"
+    SIGNER_SRL="$INT_SRL"
+    SIGNER_NAME="二级 CA"
+else
+    SIGNER_KEY="$ROOT_KEY"
+    SIGNER_CRT="$ROOT_CRT"
+    SIGNER_SRL="$ROOT_SRL"
+    SIGNER_NAME="根 CA"
 fi
 
 if [[ -f "$SERVER_KEY" || -f "$SERVER_CRT" ]]; then
@@ -128,20 +144,28 @@ openssl req -new -key "$SERVER_KEY" -out "$SERVER_CSR" -config "$TEMP_CNF"
 
 openssl x509 -req -days "$DAYS" \
     -in "$SERVER_CSR" \
-    -CA "$CA_CRT" \
-    -CAkey "$CA_KEY" \
-    -CAserial "$CA_SRL" \
+    -CA "$SIGNER_CRT" \
+    -CAkey "$SIGNER_KEY" \
+    -CAserial "$SIGNER_SRL" \
     -CAcreateserial \
     -out "$SERVER_CRT" \
     -extfile "$TEMP_CNF" \
     -extensions v3_server
 
-cat "$SERVER_CRT" "$CA_CRT" > "$FULLCHAIN"
+if [[ -f "$INT_CRT" ]]; then
+    cat "$SERVER_CRT" "$INT_CRT" "$ROOT_CRT" > "$FULLCHAIN"
+else
+    cat "$SERVER_CRT" "$ROOT_CRT" > "$FULLCHAIN"
+fi
 
-echo "服务端证书签发完成"
+echo "服务端证书签发完成（签发者: ${SIGNER_NAME}）"
 echo "私钥: $SERVER_KEY"
 echo "证书: $SERVER_CRT"
 echo "证书链: $FULLCHAIN"
 echo ""
-openssl x509 -in "$SERVER_CRT" -noout -subject -dates
-openssl verify -CAfile "$CA_CRT" "$SERVER_CRT"
+openssl x509 -in "$SERVER_CRT" -noout -subject -issuer -dates
+if [[ -f "$INT_CRT" ]]; then
+    openssl verify -CAfile "$ROOT_CRT" -untrusted "$INT_CRT" "$SERVER_CRT"
+else
+    openssl verify -CAfile "$ROOT_CRT" "$SERVER_CRT"
+fi
