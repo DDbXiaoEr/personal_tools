@@ -48,6 +48,54 @@ func TestSkillNameFromURI(t *testing.T) {
 	}
 }
 
+func TestApplyFocusFocusesTextarea(t *testing.T) {
+	f := &form{}
+	f.add(newArea("command", "", 3))
+	f.focus = 0
+	f.applyFocus()
+	if !f.fields[0].area.Focused() {
+		t.Fatal("textarea should be focused")
+	}
+	f.add(newText("cwd", ""))
+	f.focus = 1
+	f.applyFocus()
+	if f.fields[0].area.Focused() {
+		t.Fatal("textarea should blur when focus moves")
+	}
+	if !f.fields[1].input.Focused() {
+		t.Fatal("text input should be focused")
+	}
+}
+
+func TestMCPTypeHidesCommandFields(t *testing.T) {
+	f := &form{}
+	f.add(
+		newText("name", ""),
+		newChoice("type", []string{"local", "remote"}, 0),
+		newArea("command", "", 3),
+		newButton("browse", actionPickCommand),
+		newArea("env", "", 2),
+		newText("cwd", ""),
+		newText("url", ""),
+		newArea("headers", "", 2),
+		newText("timeout", ""),
+		newBool("oauth", false),
+		newBool("enabled", true),
+	)
+	applyMCPTypeVisibility(f)
+	if f.fields[mcpFieldCommand].hidden || !f.fields[mcpFieldURL].hidden {
+		t.Fatalf("local: command hidden=%v url hidden=%v", f.fields[mcpFieldCommand].hidden, f.fields[mcpFieldURL].hidden)
+	}
+	f.fields[mcpFieldType].choice = 1
+	applyMCPTypeVisibility(f)
+	if !f.fields[mcpFieldCommand].hidden || !f.fields[mcpFieldBrowse].hidden {
+		t.Fatal("remote should hide command/browse")
+	}
+	if f.fields[mcpFieldURL].hidden || f.fields[mcpFieldHeaders].hidden {
+		t.Fatal("remote should show url/headers")
+	}
+}
+
 func TestParseKV(t *testing.T) {
 	kvs := parseKV("A=1\nB = two\n# comment\nC", "=")
 	if len(kvs) != 3 {

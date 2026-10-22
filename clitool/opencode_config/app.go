@@ -281,9 +281,9 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G", "end":
 		m.setCursor(m.listLen() - 1)
 	case "a":
-		m.startAdd()
+		return m, m.startAdd()
 	case "enter", "e":
-		m.startEdit()
+		return m, m.startEdit()
 	case "d", "delete", "backspace":
 		m.startDelete()
 	case " ":
@@ -315,18 +315,16 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.formKind = ""
 		return m, nil
 	case "tab":
-		m.form.next()
-		return m, nil
+		return m, m.form.next()
 	case "shift+tab":
-		m.form.prev()
-		return m, nil
+		return m, m.form.prev()
 	case "up":
-		if m.form.moveUp() {
-			return m, nil
+		if moved, cmd := m.form.moveUp(); moved {
+			return m, cmd
 		}
 	case "down":
-		if m.form.moveDown() {
-			return m, nil
+		if moved, cmd := m.form.moveDown(); moved {
+			return m, cmd
 		}
 	case "ctrl+f":
 		return m.openCommandPicker()
@@ -373,16 +371,16 @@ func (m model) updateFilePick(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.filePicker, cmd = m.filePicker.Update(msg)
 	if didSelect, path := m.filePicker.DidSelectFile(msg); didSelect {
-		m.applyPickedFile(path)
+		focusCmd := m.applyPickedFile(path)
 		m.mode = modeForm
-		return m, nil
+		return m, focusCmd
 	}
 	return m, cmd
 }
 
-func (m *model) applyPickedFile(path string) {
+func (m *model) applyPickedFile(path string) tea.Cmd {
 	if m.pickTarget < 0 || m.pickTarget >= len(m.form.fields) {
-		return
+		return nil
 	}
 	fld := m.form.fields[m.pickTarget]
 	existing := parseLines(fld.areaText())
@@ -392,7 +390,9 @@ func (m *model) applyPickedFile(path string) {
 	}
 	lines := append([]string{path}, args...)
 	fld.setArea(strings.Join(lines, "\n"))
-	m.setOK("已选择 " + path)
+	m.form.focus = m.pickTarget
+	m.setOK("已选择 " + path + "，可继续换行填写参数")
+	return m.form.applyFocus()
 }
 
 func (m model) submitForm() (tea.Model, tea.Cmd) {
@@ -566,58 +566,60 @@ func detectProjectConfig() string {
 	}
 }
 
-func (m *model) startAdd() {
+func (m *model) startAdd() tea.Cmd {
 	switch m.tab {
 	case tabProviders:
 		m.editingProvider = ""
 		m.editingProviderRaw = nil
 		m.formKind = "provider"
-		m.buildProviderForm()
 		m.mode = modeForm
+		return m.buildProviderForm()
 	case tabMCP:
 		m.editingMCP = ""
 		m.editingMCPRaw = nil
 		m.formKind = "mcp"
-		m.buildMCPForm()
 		m.mode = modeForm
+		return m.buildMCPForm()
 	case tabSkills:
 		if m.installing {
 			m.setErr("正在安装技能，请稍候")
-			return
+			return nil
 		}
 		m.formKind = "skill"
-		m.buildSkillForm()
 		m.mode = modeForm
+		return m.buildSkillForm()
 	}
+	return nil
 }
 
-func (m *model) startEdit() {
+func (m *model) startEdit() tea.Cmd {
 	switch m.tab {
 	case tabProviders:
 		ids := m.cfg.ProviderIDs()
 		if len(ids) == 0 {
-			return
+			return nil
 		}
 		id := ids[m.provCursor]
 		m.editingProvider = id
 		m.editingProviderRaw = m.cfg.Provider(id)
 		m.formKind = "provider"
-		m.buildProviderForm()
 		m.mode = modeForm
+		return m.buildProviderForm()
 	case tabMCP:
 		ids := m.cfg.MCPIDs()
 		if len(ids) == 0 {
-			return
+			return nil
 		}
 		name := ids[m.mcpCursor]
 		m.editingMCP = name
 		m.editingMCPRaw = m.cfg.MCP(name)
 		m.formKind = "mcp"
-		m.buildMCPForm()
 		m.mode = modeForm
+		return m.buildMCPForm()
 	case tabSkills:
 		m.openSkillView()
 	}
+	return nil
 }
 
 func (m *model) startDelete() {
@@ -664,7 +666,7 @@ func (m *model) toggleEnabled() {
 	m.setOK(fmt.Sprintf("%s %s，按 s 保存", name, state))
 }
 
-func (m *model) buildProviderForm() {
+func (m *model) buildProviderForm() tea.Cmd {
 	p := opencode.ParseProvider(m.editingProvider, m.editingProviderRaw)
 	title := "新增 Provider"
 	if m.editingProvider != "" {
@@ -688,8 +690,9 @@ func (m *model) buildProviderForm() {
 	f.fields[provFieldNPM].setText(p.NPM)
 	f.fields[provFieldBaseURL].setText(p.BaseURL)
 	f.fields[provFieldAPIKey].setText(p.APIKey)
-	f.focusFirst()
+	cmd := f.focusFirst()
 	m.form = *f
+	return cmd
 }
 
 func (m *model) applyProviderForm() error {
@@ -876,9 +879,9 @@ func (m model) updateVariantList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setVariantCursor(p.NumVariants() - 1)
 		}
 	case "a":
-		m.startAddVariant()
+		return m, m.startAddVariant()
 	case "enter", "e":
-		m.startEditVariant()
+		return m, m.startEditVariant()
 	case "d", "delete", "backspace":
 		p, _, ok := m.currentProvider()
 		if ok && p.NumVariants() > 0 {
@@ -939,27 +942,27 @@ func (m *model) currentVariantRef() (opencode.VariantRef, bool) {
 	return refs[m.variantCursor], true
 }
 
-func (m *model) startAddVariant() {
+func (m *model) startAddVariant() tea.Cmd {
 	m.editingVarModel = ""
 	m.editingVarID = ""
 	m.formKind = "variant"
-	m.buildVariantForm(nil)
 	m.mode = modeForm
+	return m.buildVariantForm(nil)
 }
 
-func (m *model) startEditVariant() {
+func (m *model) startEditVariant() tea.Cmd {
 	ref, ok := m.currentVariantRef()
 	if !ok {
-		return
+		return nil
 	}
 	m.editingVarModel = ref.ModelID
 	m.editingVarID = ref.Variant.ID
 	m.formKind = "variant"
-	m.buildVariantForm(ref.Variant)
 	m.mode = modeForm
+	return m.buildVariantForm(ref.Variant)
 }
 
-func (m *model) buildVariantForm(v *opencode.Variant) {
+func (m *model) buildVariantForm(v *opencode.Variant) tea.Cmd {
 	title := "新增 Variant"
 	if m.editingVarID != "" {
 		title = "编辑 Variant: " + m.editingVarModel + "/" + m.editingVarID
@@ -986,8 +989,9 @@ func (m *model) buildVariantForm(v *opencode.Variant) {
 		newArea("options (KEY=value)", "reasoningEffort=high\ntextVerbosity=low", 6),
 	)
 	f.fields[varFieldOptions].setArea(opts)
-	f.focusFirst()
+	cmd := f.focusFirst()
 	m.form = *f
+	return cmd
 }
 
 func (m *model) applyVariantForm() error {
@@ -1084,7 +1088,18 @@ func (m *model) toggleVariant() {
 	m.setOK(fmt.Sprintf("%s/%s %s，按 s 保存", ref.ModelID, ref.Variant.ID, state))
 }
 
-func (m *model) buildMCPForm() {
+func applyMCPTypeVisibility(f *form) {
+	remote := f.fields[mcpFieldType].choiceValue() == "remote"
+	f.fields[mcpFieldCommand].hidden = remote
+	f.fields[mcpFieldBrowse].hidden = remote
+	f.fields[mcpFieldEnvironment].hidden = remote
+	f.fields[mcpFieldCWD].hidden = remote
+	f.fields[mcpFieldURL].hidden = !remote
+	f.fields[mcpFieldHeaders].hidden = !remote
+	f.fields[mcpFieldOAuth].hidden = !remote
+}
+
+func (m *model) buildMCPForm() tea.Cmd {
 	mc := opencode.ParseMCP(m.editingMCP, m.editingMCPRaw)
 	title := "新增 MCP Server"
 	if m.editingMCP != "" {
@@ -1099,11 +1114,13 @@ func (m *model) buildMCPForm() {
 	if m.editingMCP != "" {
 		nameField.readOnly = true
 	}
+	typeField := newChoice("type", []string{"local", "remote"}, typeIdx)
+	typeField.onChoice = applyMCPTypeVisibility
 	f := &form{title: title}
 	f.add(
 		nameField,
-		newChoice("type", []string{"local", "remote"}, typeIdx),
-		newArea("command (每行一个参数)", "npx\n-y\n@modelcontextprotocol/server-everything", 3),
+		typeField,
+		newArea("command (每行一个参数)", "sshtool\n-key-pair\n~/.ssh/key-pair.json", 4),
 		newButton("浏览可执行文件…", actionPickCommand),
 		newArea("environment (KEY=value)", "MY_VAR=value", 3),
 		newText("cwd", ""),
@@ -1119,8 +1136,10 @@ func (m *model) buildMCPForm() {
 	f.fields[mcpFieldURL].setText(mc.URL)
 	f.fields[mcpFieldHeaders].setArea(kvToLines(mc.Headers, ": "))
 	f.fields[mcpFieldTimeout].setText(mc.Timeout)
-	f.focusFirst()
+	applyMCPTypeVisibility(f)
+	cmd := f.focusFirst()
 	m.form = *f
+	return cmd
 }
 
 func (m *model) applyMCPForm() error {
@@ -1164,14 +1183,15 @@ func (m *model) applyMCPForm() error {
 	return nil
 }
 
-func (m *model) buildSkillForm() {
+func (m *model) buildSkillForm() tea.Cmd {
 	f := &form{title: "新增 Skill"}
 	f.add(
 		newText("目录名", "my-skill"),
 		newText("zip URI", "https://example.com/skill.zip"),
 	)
-	f.focusFirst()
+	cmd := f.focusFirst()
 	m.form = *f
+	return cmd
 }
 
 func (m model) applySkillForm() (tea.Model, tea.Cmd) {
@@ -1642,7 +1662,7 @@ func (m model) helpView() string {
 			"  · 新增 Provider 且尚未配置模型时，ctrl+s 会自动拉取。apiKey 支持 {env:VAR}。\n" +
 			"  · Provider 按 v 管理 models.variants；options 每行 KEY=value，JSON 值原样保留。\n" +
 			"  · Provider 未在表单中暴露的键（如 blacklist）会被原样保留。\n" +
-			"  · MCP local 类型：Tab 到「浏览可执行文件」按钮按 Enter（或按 ctrl+f）选择可执行文件。\n" +
+			"  · MCP local 类型：command 每行一个参数（可执行文件、flag、路径）。Tab 到「浏览可执行文件」按 Enter（或 ctrl+f）选择二进制，选完可继续换行填参数。\n" +
 			"  · Skills：a 从 zip URI 下载并解压到指定目录；d 删除技能目录；enter 查看 SKILL.md 全文。")
 }
 

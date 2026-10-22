@@ -28,6 +28,8 @@ type field struct {
 	boolean  bool
 	action   string
 	readOnly bool
+	hidden   bool
+	onChoice func(*form)
 }
 
 func newText(label, placeholder string) *field {
@@ -43,6 +45,7 @@ func newArea(label, placeholder string, height int) *field {
 	ta.Placeholder = placeholder
 	ta.ShowLineNumbers = false
 	ta.SetHeight(height)
+	ta.CharLimit = 0
 	return &field{label: label, kind: kindArea, area: ta}
 }
 
@@ -58,7 +61,6 @@ func newButton(label, action string) *field {
 	return &field{label: label, kind: kindButton, action: action}
 }
 
-// focused returns the currently focused field, or nil.
 func (f *form) focused() *field {
 	if f.focus < 0 || f.focus >= len(f.fields) {
 		return nil
@@ -87,6 +89,9 @@ func (f *field) areaText() string {
 }
 
 func (f *field) choiceValue() string {
+	if f.choice < 0 || f.choice >= len(f.options) {
+		return ""
+	}
 	return f.options[f.choice]
 }
 
@@ -101,58 +106,107 @@ func (f *form) add(fs ...*field) *form {
 	return f
 }
 
-func (f *form) focusFirst() {
-	f.focus = 0
-	f.applyFocus()
-}
-
-func (f *form) applyFocus() {
+func (f *form) visibleIndexes() []int {
+	var out []int
 	for i, fld := range f.fields {
-		if fld.kind != kindText {
-			continue
-		}
-		if i == f.focus {
-			fld.input.Focus()
-		} else {
-			fld.input.Blur()
+		if !fld.hidden {
+			out = append(out, i)
 		}
 	}
+	return out
 }
 
-func (f *form) next() {
-	if len(f.fields) == 0 {
-		return
+func (f *form) focusFirst() tea.Cmd {
+	vis := f.visibleIndexes()
+	if len(vis) == 0 {
+		f.focus = 0
+		return f.applyFocus()
 	}
-	f.focus = (f.focus + 1) % len(f.fields)
-	f.applyFocus()
-}
-
-func (f *form) prev() {
-	if len(f.fields) == 0 {
-		return
+	for _, idx := range vis {
+		if !f.fields[idx].readOnly {
+			f.focus = idx
+			return f.applyFocus()
+		}
 	}
-	f.focus = (f.focus - 1 + len(f.fields)) % len(f.fields)
-	f.applyFocus()
+	f.focus = vis[0]
+	return f.applyFocus()
 }
 
-// moveUp moves focus to the previous field, unless the focused field is a
-// multi-line area that still has lines above the cursor.
-func (f *form) moveUp() bool {
+func (f *form) applyFocus() tea.Cmd {
+	if len(f.fields) == 0 {
+		return nil
+	}
+	if f.focus < 0 || f.focus >= len(f.fields) || f.fields[f.focus].hidden {
+		vis := f.visibleIndexes()
+		if len(vis) == 0 {
+			return nil
+		}
+		f.focus = vis[0]
+	}
+	var cmds []tea.Cmd
+	for i, fld := range f.fields {
+		switch fld.kind {
+		case kindText:
+			if i == f.focus && !fld.readOnly {
+				cmds = append(cmds, fld.input.Focus())
+			} else {
+				fld.input.Blur()
+			}
+		case kindArea:
+			if i == f.focus {
+				cmds = append(cmds, fld.area.Focus())
+			} else {
+				fld.area.Blur()
+			}
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+func (f *form) next() tea.Cmd {
+	vis := f.visibleIndexes()
+	if len(vis) == 0 {
+		return nil
+	}
+	cur := 0
+	for i, idx := range vis {
+		if idx == f.focus {
+			cur = i
+			break
+		}
+	}
+	f.focus = vis[(cur+1)%len(vis)]
+	return f.applyFocus()
+}
+
+func (f *form) prev() tea.Cmd {
+	vis := f.visibleIndexes()
+	if len(vis) == 0 {
+		return nil
+	}
+	cur := 0
+	for i, idx := range vis {
+		if idx == f.focus {
+			cur = i
+			break
+		}
+	}
+	f.focus = vis[(cur-1+len(vis))%len(vis)]
+	return f.applyFocus()
+}
+
+func (f *form) moveUp() (bool, tea.Cmd) {
 	if fld := f.focused(); fld != nil && fld.kind == kindArea && fld.area.Line() > 0 {
-		return false
+		return false, nil
 	}
-	f.prev()
-	return true
+	return true, f.prev()
 }
 
-// moveDown moves focus to the next field, unless the focused field is a
-// multi-line area that still has lines below the cursor.
-func (f *form) moveDown() bool {
+func (f *form) moveDown() (bool, tea.Cmd) {
 	if fld := f.focused(); fld != nil && fld.kind == kindArea && fld.area.Line() < fld.area.LineCount()-1 {
-		return false
+		return false, nil
 	}
-	f.next()
-	return true
+	return true, f.next()
 }
 
 func (f *form) updateFocused(msg tea.KeyMsg) tea.Cmd {
@@ -160,7 +214,7 @@ func (f *form) updateFocused(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	fld := f.fields[f.focus]
-	if fld.readOnly {
+	if fld.readOnly || fld.hidden {
 		return nil
 	}
 	switch fld.kind {
@@ -184,6 +238,12 @@ func (f *form) updateFocused(msg tea.KeyMsg) tea.Cmd {
 			} else {
 				fld.choice = 0
 			}
+		default:
+			return nil
+		}
+		if fld.onChoice != nil {
+			fld.onChoice(f)
+			return f.applyFocus()
 		}
 	case kindBool:
 		switch msg.String() {
@@ -199,6 +259,9 @@ func (f *form) View() string {
 	b.WriteString(titleStyle.Render(f.title))
 	b.WriteString("\n\n")
 	for i, fld := range f.fields {
+		if fld.hidden {
+			continue
+		}
 		if fld.kind == kindButton {
 			style := buttonStyle
 			if i == f.focus {

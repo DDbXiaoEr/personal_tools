@@ -25,6 +25,7 @@ func parseSSHConn(requestArgs map[string]any, port int, timeoutSec float64) (ssh
 	user, _ := requestArgs["user"].(string)
 	password, pwTypeErr := argString(requestArgs, "password")
 	keyPath, keyTypeErr := argString(requestArgs, "key_path")
+	keyName, keyNameTypeErr := argString(requestArgs, "key_name")
 
 	if port <= 0 {
 		port = 22
@@ -45,11 +46,30 @@ func parseSSHConn(requestArgs map[string]any, port int, timeoutSec float64) (ssh
 	if host == "" || user == "" {
 		return cfg, "host and user are required"
 	}
-	if password == "" && keyPath == "" {
-		if pwTypeErr != "" || keyTypeErr != "" {
-			return cfg, fmt.Sprintf("invalid credentials: %s %s", pwTypeErr, keyTypeErr)
+
+	if keyPath == "" && keyName != "" {
+		resolved, err := lookupKeyName(keyName)
+		if err != nil {
+			return cfg, err.Error()
 		}
-		return cfg, "either password or key_path must be provided"
+		keyPath = resolved
+		cfg.keyPath = keyPath
+	}
+
+	if keyPath != "" {
+		expanded, err := expandLocalPath(keyPath)
+		if err != nil {
+			return cfg, err.Error()
+		}
+		keyPath = expanded
+		cfg.keyPath = keyPath
+	}
+
+	if password == "" && keyPath == "" {
+		if pwTypeErr != "" || keyTypeErr != "" || keyNameTypeErr != "" {
+			return cfg, fmt.Sprintf("invalid credentials: %s %s %s", pwTypeErr, keyTypeErr, keyNameTypeErr)
+		}
+		return cfg, "either password, key_path, or key_name must be provided"
 	}
 	return cfg, ""
 }

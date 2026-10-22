@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -14,7 +16,7 @@ func TestParseSSHConn(t *testing.T) {
 	})
 	t.Run("missing credentials keeps host", func(t *testing.T) {
 		cfg, errMsg := parseSSHConn(map[string]any{"host": "1.2.3.4", "user": "root"}, 0, 0)
-		if errMsg != "either password or key_path must be provided" {
+		if errMsg != "either password, key_path, or key_name must be provided" {
 			t.Fatalf("got %q", errMsg)
 		}
 		if cfg.host != "1.2.3.4" || cfg.user != "root" {
@@ -33,6 +35,47 @@ func TestParseSSHConn(t *testing.T) {
 		}
 		if cfg.port != 2222 || cfg.password != "p" {
 			t.Fatalf("unexpected cfg: %+v", cfg)
+		}
+	})
+	t.Run("key_name resolves path", func(t *testing.T) {
+		prev := keyPairIndex
+		t.Cleanup(func() { keyPairIndex = prev })
+		keyDir := t.TempDir()
+		keyFile := filepath.Join(keyDir, "id_rsa")
+		if err := os.WriteFile(keyFile, []byte("dummy"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		keyPairIndex = map[string]string{"demookey": keyFile}
+		cfg, errMsg := parseSSHConn(map[string]any{
+			"host": "h", "user": "u", "key_name": "demookey",
+		}, 22, 30)
+		if errMsg != "" {
+			t.Fatalf("unexpected error: %s", errMsg)
+		}
+		if cfg.keyPath != keyFile {
+			t.Fatalf("keyPath = %q want %q", cfg.keyPath, keyFile)
+		}
+	})
+	t.Run("unknown key_name", func(t *testing.T) {
+		prev := keyPairIndex
+		t.Cleanup(func() { keyPairIndex = prev })
+		keyPairIndex = map[string]string{"demookey": "/tmp/x"}
+		_, errMsg := parseSSHConn(map[string]any{
+			"host": "h", "user": "u", "key_name": "missing",
+		}, 22, 30)
+		if errMsg != `unknown key_name "missing"` {
+			t.Fatalf("got %q", errMsg)
+		}
+	})
+	t.Run("key_name without inventory", func(t *testing.T) {
+		prev := keyPairIndex
+		t.Cleanup(func() { keyPairIndex = prev })
+		keyPairIndex = map[string]string{}
+		_, errMsg := parseSSHConn(map[string]any{
+			"host": "h", "user": "u", "key_name": "demookey",
+		}, 22, 30)
+		if errMsg == "" {
+			t.Fatal("expected error")
 		}
 	})
 }

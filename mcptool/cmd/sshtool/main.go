@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"strings"
@@ -20,9 +21,18 @@ type sshExecResult struct {
 }
 
 func main() {
+	keyPairPath := flag.String("key-pair", "", "Path to key-pair.json, or a directory containing it")
+	flag.Parse()
+
+	index, err := loadKeyPairs(*keyPairPath)
+	if err != nil {
+		log.Fatalf("failed to load key pairs: %v", err)
+	}
+	keyPairIndex = index
+
 	s := server.NewMCPServer(
 		"ssh-mcp",
-		"1.1.0",
+		"1.2.0",
 		server.WithToolCapabilities(true),
 	)
 
@@ -49,6 +59,9 @@ func main() {
 			),
 			mcp.WithString("key_path",
 				mcp.Description("Path to SSH private key file (PEM format)"),
+			),
+			mcp.WithString("key_name",
+				mcp.Description("SSH key name from key-pair.json (either this, key_path, or password)"),
 			),
 			mcp.WithNumber("timeout",
 				mcp.Description("Connection timeout in seconds (default: 30)"),
@@ -84,6 +97,9 @@ func main() {
 			),
 			mcp.WithString("key_path",
 				mcp.Description("Path to SSH private key file (PEM format)"),
+			),
+			mcp.WithString("key_name",
+				mcp.Description("SSH key name from key-pair.json (either this, key_path, or password)"),
 			),
 			mcp.WithNumber("timeout",
 				mcp.Description("Connection timeout in seconds (default: 30)"),
@@ -125,6 +141,9 @@ func main() {
 			),
 			mcp.WithString("key_path",
 				mcp.Description("Path to SSH private key file (PEM format)"),
+			),
+			mcp.WithString("key_name",
+				mcp.Description("SSH key name from key-pair.json (either this, key_path, or password)"),
 			),
 			mcp.WithNumber("timeout",
 				mcp.Description("Connection timeout in seconds (default: 30)"),
