@@ -250,7 +250,7 @@ sshtool -key-pair ~/.ssh
 
 ```json
 [
-  {"keyname":"demookey","keypath":"~/.ssh/demokey"},
+  {"keyname":"demokey","keypath":"~/.ssh/demokey"},
   {"keyname":"prod","keypath":"~/.ssh/id_ed25519"}
 ]
 ```
