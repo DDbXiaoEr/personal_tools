@@ -243,7 +243,7 @@ sshtool -key-pair ~/.ssh
 `key-pair.json` example:
 
 ```json
-{"keyname":"demookey","keypath":"~/.ssh/demokey"}
+{"keyname":"demokey","keypath":"~/.ssh/demokey"}
 ```
 
 Multiple keys as an array:
