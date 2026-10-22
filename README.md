@@ -243,7 +243,7 @@ sshtool -key-pair ~/.ssh
 `key-pair.json` 示例：
 
 ```json
-{"keyname":"demookey","keypath":"~/.ssh/demokey"}
+{"keyname":"demokey","keypath":"~/.ssh/demokey"}
 ```
 
 多把密钥用数组：
