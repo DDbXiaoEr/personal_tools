@@ -20,51 +20,49 @@ type sshExecResult struct {
 	ExitCode int    `json:"exit_code"`
 }
 
+var sshConfigFile = &sshConfig{}
+
 func main() {
-	keyPairPath := flag.String("key-pair", "", "Path to key-pair.json, or a directory containing it")
+	configPath := flag.String("config", "", "Path to SSH config file (default: ~/.ssh/config)")
 	flag.Parse()
 
-	index, err := loadKeyPairs(*keyPairPath)
+	cfg, err := loadSSHConfig(*configPath)
 	if err != nil {
-		log.Fatalf("failed to load key pairs: %v", err)
+		log.Fatalf("failed to load ssh config: %v", err)
 	}
-	keyPairIndex = index
+	sshConfigFile = cfg
 
 	s := server.NewMCPServer(
 		"ssh-mcp",
-		"1.2.0",
+		"2.0.0",
 		server.WithToolCapabilities(true),
 	)
 
 	s.AddTool(
 		mcp.NewTool("runsshcommand_via_ssh",
-			mcp.WithDescription("Execute a command on a remote host via SSH and return stdout, stderr, and exit code."),
-			mcp.WithString("host",
+			mcp.WithDescription("Execute a command on a remote host via SSH. hostname is an SSH config Host alias (or a real hostname)."),
+			mcp.WithString("hostname",
 				mcp.Required(),
-				mcp.Description("Remote host IP or hostname"),
-			),
-			mcp.WithString("user",
-				mcp.Required(),
-				mcp.Description("SSH username"),
+				mcp.Description("SSH config Host alias, or a hostname / IP if not listed in ssh config"),
 			),
 			mcp.WithString("command",
 				mcp.Required(),
 				mcp.Description("Command to execute on the remote host"),
 			),
+			mcp.WithString("user",
+				mcp.Description("SSH username (overrides ssh config User)"),
+			),
 			mcp.WithNumber("port",
-				mcp.Description("SSH port (default: 22)"),
+				mcp.Description("SSH port (overrides ssh config Port, default: 22)"),
 			),
 			mcp.WithString("password",
-				mcp.Description("SSH password"),
+				mcp.Description("SSH password (optional; otherwise IdentityFile / default keys are used)"),
 			),
 			mcp.WithString("key_path",
-				mcp.Description("Path to SSH private key file (PEM format)"),
-			),
-			mcp.WithString("key_name",
-				mcp.Description("SSH key name from key-pair.json (either this, key_path, or password)"),
+				mcp.Description("Path to SSH private key file (PEM format); overrides ssh config IdentityFile"),
 			),
 			mcp.WithNumber("timeout",
-				mcp.Description("Connection timeout in seconds (default: 30)"),
+				mcp.Description("Connection timeout in seconds (overrides ssh config ConnectTimeout, default: 30)"),
 			),
 		),
 		sshExecHandler,
@@ -72,14 +70,10 @@ func main() {
 
 	s.AddTool(
 		mcp.NewTool("uploadfile_via_ssh",
-			mcp.WithDescription("Upload a local file to a remote host over SFTP. Directories are not supported."),
-			mcp.WithString("host",
+			mcp.WithDescription("Upload a local file to a remote host over SFTP. hostname is an SSH config Host alias. Directories are not supported."),
+			mcp.WithString("hostname",
 				mcp.Required(),
-				mcp.Description("Remote host IP or hostname"),
-			),
-			mcp.WithString("user",
-				mcp.Required(),
-				mcp.Description("SSH username"),
+				mcp.Description("SSH config Host alias, or a hostname / IP if not listed in ssh config"),
 			),
 			mcp.WithString("local_path",
 				mcp.Required(),
@@ -89,20 +83,20 @@ func main() {
 				mcp.Required(),
 				mcp.Description("Remote destination path. If it is a directory (exists or ends with /), the local filename is appended."),
 			),
+			mcp.WithString("user",
+				mcp.Description("SSH username (overrides ssh config User)"),
+			),
 			mcp.WithNumber("port",
-				mcp.Description("SSH port (default: 22)"),
+				mcp.Description("SSH port (overrides ssh config Port, default: 22)"),
 			),
 			mcp.WithString("password",
-				mcp.Description("SSH password"),
+				mcp.Description("SSH password (optional; otherwise IdentityFile / default keys are used)"),
 			),
 			mcp.WithString("key_path",
-				mcp.Description("Path to SSH private key file (PEM format)"),
-			),
-			mcp.WithString("key_name",
-				mcp.Description("SSH key name from key-pair.json (either this, key_path, or password)"),
+				mcp.Description("Path to SSH private key file (PEM format); overrides ssh config IdentityFile"),
 			),
 			mcp.WithNumber("timeout",
-				mcp.Description("Connection timeout in seconds (default: 30)"),
+				mcp.Description("Connection timeout in seconds (overrides ssh config ConnectTimeout, default: 30)"),
 			),
 			mcp.WithBoolean("overwrite",
 				mcp.Description("Overwrite the remote file if it already exists (default: false)"),
@@ -116,14 +110,10 @@ func main() {
 
 	s.AddTool(
 		mcp.NewTool("downloadfile_via_ssh",
-			mcp.WithDescription("Download a remote file to the local filesystem over SFTP. Directories are not supported."),
-			mcp.WithString("host",
+			mcp.WithDescription("Download a remote file to the local filesystem over SFTP. hostname is an SSH config Host alias. Directories are not supported."),
+			mcp.WithString("hostname",
 				mcp.Required(),
-				mcp.Description("Remote host IP or hostname"),
-			),
-			mcp.WithString("user",
-				mcp.Required(),
-				mcp.Description("SSH username"),
+				mcp.Description("SSH config Host alias, or a hostname / IP if not listed in ssh config"),
 			),
 			mcp.WithString("remote_path",
 				mcp.Required(),
@@ -133,20 +123,20 @@ func main() {
 				mcp.Required(),
 				mcp.Description("Local destination path. If it is a directory, the remote filename is appended."),
 			),
+			mcp.WithString("user",
+				mcp.Description("SSH username (overrides ssh config User)"),
+			),
 			mcp.WithNumber("port",
-				mcp.Description("SSH port (default: 22)"),
+				mcp.Description("SSH port (overrides ssh config Port, default: 22)"),
 			),
 			mcp.WithString("password",
-				mcp.Description("SSH password"),
+				mcp.Description("SSH password (optional; otherwise IdentityFile / default keys are used)"),
 			),
 			mcp.WithString("key_path",
-				mcp.Description("Path to SSH private key file (PEM format)"),
-			),
-			mcp.WithString("key_name",
-				mcp.Description("SSH key name from key-pair.json (either this, key_path, or password)"),
+				mcp.Description("Path to SSH private key file (PEM format); overrides ssh config IdentityFile"),
 			),
 			mcp.WithNumber("timeout",
-				mcp.Description("Connection timeout in seconds (default: 30)"),
+				mcp.Description("Connection timeout in seconds (overrides ssh config ConnectTimeout, default: 30)"),
 			),
 			mcp.WithBoolean("overwrite",
 				mcp.Description("Overwrite the local file if it already exists (default: false)"),
@@ -167,16 +157,16 @@ func sshExecHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.Call
 	args := request.GetArguments()
 	command, _ := args["command"].(string)
 	if strings.TrimSpace(command) == "" {
-		return mcp.NewToolResultError("host, user, and command are required"), nil
+		return mcp.NewToolResultError("hostname and command are required"), nil
 	}
 	if isHighRisk(command) {
 		return mcp.NewToolResultError(highRiskReason(command)), nil
 	}
 
-	cfg, errMsg := parseSSHConn(args, request.GetInt("port", 22), request.GetFloat("timeout", 30))
+	cfg, errMsg := parseSSHConn(args)
 	if errMsg != "" {
-		if cfg.host == "" || cfg.user == "" {
-			return mcp.NewToolResultError("host, user, and command are required"), nil
+		if cfg.alias == "" {
+			return mcp.NewToolResultError("hostname and command are required"), nil
 		}
 		return mcp.NewToolResultError(errMsg), nil
 	}
@@ -229,13 +219,13 @@ func sshTransferHandler(request mcp.CallToolRequest, upload bool) (*mcp.CallTool
 	localPath, _ := args["local_path"].(string)
 	remotePath, _ := args["remote_path"].(string)
 	if strings.TrimSpace(localPath) == "" || strings.TrimSpace(remotePath) == "" {
-		return mcp.NewToolResultError("host, user, local_path, and remote_path are required"), nil
+		return mcp.NewToolResultError("hostname, local_path, and remote_path are required"), nil
 	}
 
-	cfg, errMsg := parseSSHConn(args, request.GetInt("port", 22), request.GetFloat("timeout", 30))
+	cfg, errMsg := parseSSHConn(args)
 	if errMsg != "" {
-		if cfg.host == "" || cfg.user == "" {
-			return mcp.NewToolResultError("host, user, local_path, and remote_path are required"), nil
+		if cfg.alias == "" {
+			return mcp.NewToolResultError("hostname, local_path, and remote_path are required"), nil
 		}
 		return mcp.NewToolResultError(errMsg), nil
 	}

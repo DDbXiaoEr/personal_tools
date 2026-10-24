@@ -1120,7 +1120,7 @@ func (m *model) buildMCPForm() tea.Cmd {
 	f.add(
 		nameField,
 		typeField,
-		newArea("command (每行一个参数)", "sshtool\n-key-pair\n~/.ssh/key-pair.json", 4),
+		newArea("command (每行一个参数)", "sshtool", 4),
 		newButton("浏览可执行文件…", actionPickCommand),
 		newArea("environment (KEY=value)", "MY_VAR=value", 3),
 		newText("cwd", ""),

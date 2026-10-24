@@ -154,7 +154,7 @@ TUI tool for managing opencode configuration, built with Bubble Tea. Manage the 
 
 **Features:**
 - **Provider**: add/edit/delete custom providers (`id` / `name` / `npm` / `options.baseURL` / `options.apiKey`). After `baseURL` and `apiKey` are set, press `f` (or the form button) to fetch OpenAI-compatible `/models` into `provider.models`; existing models only fill empty names and keep variants. New providers with no models auto-fetch on `ctrl+s`. `apiKey` accepts `{env:VAR}`. Press `v` to manage `models.variants` (`disabled` plus per-line `KEY=value` options). Keys not exposed in the form (e.g. `blacklist`) are preserved as-is.
-- **MCP**: manage both `local` and `remote` servers. For local, `command` is one argv per line (e.g. `sshtool` / `-key-pair` / `~/.ssh/key-pair.json`) with a file picker, plus `environment` and `cwd`. Remote uses `url`, `headers`, `oauth`. Shared `timeout` and `enabled`; press space to toggle from the list.
+- **MCP**: manage both `local` and `remote` servers. For local, `command` is one argv per line (e.g. `sshtool`) with a file picker, plus `environment` and `cwd`. Remote uses `url`, `headers`, `oauth`. Shared `timeout` and `enabled`; press space to toggle from the list.
 - **Skills**: browse global `~/.config/opencode/skills/*/SKILL.md`, validating frontmatter (`name` / `description`). Press `a` to download a zip from a URI and extract it under a chosen directory name; press `d` to delete a skill directory.
 - **Config source**: defaults to the global config; press `o` to switch to a project `opencode.json` found by walking up from the current directory.
 
@@ -230,30 +230,27 @@ In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Extra host vars a
 
 ### sshtool (MCP Server)
 
-SSH remote command execution / file transfer MCP Server with password, private-key path, and key-name authentication. Built-in high-risk command blocking. Commands run over an SSH session; uploads and downloads use SFTP. Can be integrated into AI assistants or automation tools via MCP.
+SSH remote command execution / file transfer MCP Server. Pass an SSH config Host alias as `hostname`; `HostName` / `User` / `Port` / `IdentityFile` are read from the config. Built-in high-risk command blocking. Commands run over an SSH session; uploads and downloads use SFTP. Can be integrated into AI assistants or automation tools via MCP.
 
-Pass `-key-pair` at startup to a `key-pair.json` file (or the directory that contains it). Tool argument `key_name` is resolved against `keyname` entries and the matching `keypath` is read.
+Reads `~/.ssh/config` by default, or pass `-config`. `Include` is supported.
 
 ```bash
-sshtool -key-pair ~/.ssh/key-pair.json
+sshtool
 # or
-sshtool -key-pair ~/.ssh
+sshtool -config ~/.ssh/config
 ```
 
-`key-pair.json` example:
+`~/.ssh/config` example:
 
-```json
-{"keyname":"demokey","keypath":"~/.ssh/demokey"}
+```
+Host web
+    HostName 10.0.0.1
+    User deploy
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519
 ```
 
-Multiple keys as an array:
-
-```json
-[
-  {"keyname":"demokey","keypath":"~/.ssh/demokey"},
-  {"keyname":"prod","keypath":"~/.ssh/id_ed25519"}
-]
-```
+Then call tools with `hostname=web`.
 
 **Available Tools:**
 - `runsshcommand_via_ssh` - Execute commands on remote hosts
@@ -263,13 +260,12 @@ Multiple keys as an array:
 **Shared parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| host | Yes | Remote host IP or hostname |
-| user | Yes | SSH username |
-| port | No | SSH port (default: 22) |
-| password | No | SSH password (one of password / key_path / key_name) |
-| key_path | No | Path to SSH private key (one of password / key_path / key_name) |
-| key_name | No | Key name from key-pair.json |
-| timeout | No | Connection timeout in seconds (default: 30) |
+| hostname | Yes | SSH config Host alias, or a real hostname / IP if not listed |
+| user | No | SSH username (overrides config User) |
+| port | No | SSH port (overrides config Port, default 22) |
+| password | No | SSH password (optional; IdentityFile or `~/.ssh/id_*` is used otherwise) |
+| key_path | No | Path to SSH private key (overrides config IdentityFile) |
+| timeout | No | Connection timeout in seconds (overrides config ConnectTimeout, default 30) |
 
 **runsshcommand_via_ssh extra parameters:**
 | Parameter | Required | Description |

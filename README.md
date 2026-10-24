@@ -154,7 +154,7 @@ opencode 配置管理 TUI 工具，基于 Bubble Tea 构建。用于管理全局
 
 **功能：**
 - **Provider**：增删改自定义 provider（`id` / `name` / `npm` / `options.baseURL` / `options.apiKey`）。配好 `baseURL` 和 `apiKey` 后按 `f`（或表单「从 API 拉取模型」）请求 OpenAI 兼容的 `/models` 并写入 `provider.models`；已有模型只补全空名称，variants 原样保留。新增且尚未配置模型时，`ctrl+s` 会自动拉取。`apiKey` 支持 `{env:VAR}`。按 `v` 管理 `models.variants`（`disabled` 与每行 `KEY=value` 的 options）；未在表单中暴露的键（如 `blacklist`）原样保留。
-- **MCP**：管理 `local` / `remote` 两类 server。local 的 `command` 每行一个参数（例如 `sshtool` / `-key-pair` / `~/.ssh/key-pair.json`），可浏览可执行文件；另有 `environment`、`cwd`。remote 覆盖 `url`、`headers`、`oauth`。共用 `timeout`、`enabled`，列表中按空格快速启停。
+- **MCP**：管理 `local` / `remote` 两类 server。local 的 `command` 每行一个参数（例如 `sshtool`），可浏览可执行文件；另有 `environment`、`cwd`。remote 覆盖 `url`、`headers`、`oauth`。共用 `timeout`、`enabled`，列表中按空格快速启停。
 - **Skills**：浏览全局 `~/.config/opencode/skills/*/SKILL.md`，校验 frontmatter（`name` / `description`）；按 `a` 从 zip URI 下载并解压到指定目录名，按 `d` 删除技能目录。
 - **配置来源**：默认全局配置，按 `o` 可切换到从当前目录向上查找到的项目 `opencode.json`。
 
@@ -230,30 +230,27 @@ ansiman -file ./inventory.yml
 
 ### sshtool (MCP Server)
 
-SSH 远程命令执行 / 文件传输 MCP Server，支持密码、私钥路径和密钥名认证，内置高危命令拦截。命令走 SSH session，上传下载走 SFTP。可通过 MCP 协议集成到 AI 助手或自动化工具中。
+SSH 远程命令执行 / 文件传输 MCP Server。调用时传入 SSH config 里的 Host 别名（`hostname`），自动读取 `HostName` / `User` / `Port` / `IdentityFile`。内置高危命令拦截。命令走 SSH session，上传下载走 SFTP。可通过 MCP 协议集成到 AI 助手或自动化工具中。
 
-启动时可用 `-key-pair` 指定 `key-pair.json`（或其所在目录）。工具参数 `key_name` 会按清单中的 `keyname` 读取对应 `keypath`。
+默认读取 `~/.ssh/config`，也可用 `-config` 指定其它文件。支持 `Include`。
 
 ```bash
-sshtool -key-pair ~/.ssh/key-pair.json
+sshtool
 # 或
-sshtool -key-pair ~/.ssh
+sshtool -config ~/.ssh/config
 ```
 
-`key-pair.json` 示例：
+`~/.ssh/config` 示例：
 
-```json
-{"keyname":"demokey","keypath":"~/.ssh/demokey"}
+```
+Host web
+    HostName 10.0.0.1
+    User deploy
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519
 ```
 
-多把密钥用数组：
-
-```json
-[
-  {"keyname":"demokey","keypath":"~/.ssh/demokey"},
-  {"keyname":"prod","keypath":"~/.ssh/id_ed25519"}
-]
-```
+之后工具只需传 `hostname=web`。
 
 **可用工具：**
 - `runsshcommand_via_ssh` - 在远程主机执行命令
@@ -263,13 +260,12 @@ sshtool -key-pair ~/.ssh
 **公共参数：**
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| host | 是 | 远程主机 IP 或域名 |
-| user | 是 | SSH 用户名 |
-| port | 否 | SSH 端口 (默认 22) |
-| password | 否 | SSH 密码（与 key_path / key_name 三选一） |
-| key_path | 否 | SSH 私钥路径（与 password / key_name 三选一） |
-| key_name | 否 | 密钥名，对应 key-pair.json 的 keyname |
-| timeout | 否 | 连接超时秒数 (默认 30) |
+| hostname | 是 | SSH config 的 Host 别名；未配置时也可填真实主机名 / IP |
+| user | 否 | SSH 用户名（覆盖 config 的 User） |
+| port | 否 | SSH 端口（覆盖 config 的 Port，默认 22） |
+| password | 否 | SSH 密码（可选；默认用 IdentityFile 或 `~/.ssh/id_*`） |
+| key_path | 否 | SSH 私钥路径（覆盖 config 的 IdentityFile） |
+| timeout | 否 | 连接超时秒数（覆盖 config 的 ConnectTimeout，默认 30） |
 
 **runsshcommand_via_ssh 额外参数：**
 | 参数 | 必填 | 说明 |
