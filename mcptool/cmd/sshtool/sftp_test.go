@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pkg/sftp"
@@ -138,7 +139,130 @@ func TestUploadToDirectoryAndCreateDirs(t *testing.T) {
 	}
 }
 
-func TestRejectDirectories(t *testing.T) {
+func TestUploadDirectoryRecursive(t *testing.T) {
+	root := t.TempDir()
+	localDir := filepath.Join(root, "project")
+	writeFile(t, filepath.Join(localDir, "a.txt"), "a")
+	writeFile(t, filepath.Join(localDir, "sub", "b.txt"), "bb")
+	if err := os.MkdirAll(filepath.Join(localDir, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	remoteRoot := filepath.Join(root, "remote")
+	if err := os.MkdirAll(remoteRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	client := startTestSFTP(t)
+
+	up, err := uploadPath(client, localDir, filepath.ToSlash(remoteRoot)+"/", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRoot := filepath.Join(remoteRoot, "project")
+	if up.RemotePath != filepath.ToSlash(wantRoot) {
+		t.Fatalf("got %s want %s", up.RemotePath, filepath.ToSlash(wantRoot))
+	}
+	if up.Files != 2 {
+		t.Fatalf("files = %d", up.Files)
+	}
+	for name, want := range map[string]string{
+		"a.txt":     "a",
+		"sub/b.txt": "bb",
+		"empty/":    "",
+	} {
+		p := filepath.Join(wantRoot, filepath.FromSlash(name))
+		if strings.HasSuffix(name, "/") {
+			if info, err := os.Stat(p); err != nil || !info.IsDir() {
+				t.Fatalf("expected directory %s: %v", p, err)
+			}
+			continue
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(b) != want {
+			t.Fatalf("%s = %q", name, b)
+		}
+	}
+
+	if up.Bytes != 3 {
+		t.Fatalf("bytes = %d", up.Bytes)
+	}
+
+	_, err = uploadPath(client, localDir, filepath.ToSlash(remoteRoot)+"/", false, false)
+	if err == nil {
+		t.Fatal("expected overwrite protection")
+	}
+
+	if _, err := uploadPath(client, localDir, filepath.ToSlash(remoteRoot)+"/", true, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDownloadDirectoryRecursive(t *testing.T) {
+	root := t.TempDir()
+	remoteDir := filepath.Join(root, "remote", "project")
+	writeFile(t, filepath.Join(remoteDir, "a.txt"), "a")
+	writeFile(t, filepath.Join(remoteDir, "sub", "b.txt"), "bb")
+	if err := os.MkdirAll(filepath.Join(remoteDir, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	localDest := filepath.Join(root, "local")
+	client := startTestSFTP(t)
+
+	down, err := downloadPath(client, localDest, filepath.ToSlash(remoteDir), false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if down.LocalPath != localDest {
+		t.Fatalf("got %s want %s", down.LocalPath, localDest)
+	}
+	if down.Files != 2 || down.Bytes != 3 {
+		t.Fatalf("files = %d bytes = %d", down.Files, down.Bytes)
+	}
+	for name, want := range map[string]string{
+		"a.txt":     "a",
+		"sub/b.txt": "bb",
+		"empty/":    "",
+	} {
+		p := filepath.Join(localDest, filepath.FromSlash(name))
+		if strings.HasSuffix(name, "/") {
+			if info, err := os.Stat(p); err != nil || !info.IsDir() {
+				t.Fatalf("expected directory %s: %v", p, err)
+			}
+			continue
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(b) != want {
+			t.Fatalf("%s = %q", name, b)
+		}
+	}
+
+	existing := filepath.Join(root, "existing")
+	if err := os.MkdirAll(filepath.Join(existing, "project"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(existing, "project", "a.txt"), "old")
+
+	_, err = downloadPath(client, existing, filepath.ToSlash(remoteDir), false, false)
+	if err == nil {
+		t.Fatal("expected local overwrite protection")
+	}
+
+	down, err = downloadPath(client, existing, filepath.ToSlash(remoteDir), true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(existing, "project")
+	if down.LocalPath != want {
+		t.Fatalf("got %s want %s", down.LocalPath, want)
+	}
+}
+
+func TestRejectDirectoriesInSingleFileHelpers(t *testing.T) {
 	root := t.TempDir()
 	remoteDir := filepath.Join(root, "remote", "dir")
 	if err := os.MkdirAll(remoteDir, 0o755); err != nil {

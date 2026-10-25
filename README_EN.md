@@ -254,8 +254,8 @@ Then call tools with `hostname=web`.
 
 **Available Tools:**
 - `runsshcommand_via_ssh` - Execute commands on remote hosts
-- `uploadfile_via_ssh` - Upload a local file over SFTP
-- `downloadfile_via_ssh` - Download a remote file over SFTP
+- `uploadfile_via_ssh` - Upload a local file or directory over SFTP (directories are recursive)
+- `downloadfile_via_ssh` - Download a remote file or directory over SFTP (directories are recursive)
 
 **Shared parameters:**
 | Parameter | Required | Description |
@@ -275,12 +275,12 @@ Then call tools with `hostname=web`.
 **uploadfile_via_ssh / downloadfile_via_ssh extra parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| local_path | Yes | Local file path |
-| remote_path | Yes | Remote file path. On upload, if the destination is a directory (exists or ends with `/`), the local filename is appended |
+| local_path | Yes | Local file or directory path |
+| remote_path | Yes | Remote file or directory path. On upload, if the destination is a directory (exists or ends with `/`), the local file/directory name is appended |
 | overwrite | No | Overwrite an existing destination (default: false) |
-| create_dirs | No | Create missing parent directories (default: false) |
+| create_dirs | No | Create missing parent directories for single-file transfers (default: false) |
 
-Directory trees are not supported. Existing files are not overwritten by default.
+Directories are transferred recursively with missing directories created and permissions preserved. Symlinks and other special files are skipped; the result reports `skipped` and `files`. Existing files are not overwritten by default (for recursive transfers, any conflict aborts before copying).
 
 ## Build
 

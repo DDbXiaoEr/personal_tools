@@ -254,8 +254,8 @@ Host web
 
 **可用工具：**
 - `runsshcommand_via_ssh` - 在远程主机执行命令
-- `uploadfile_via_ssh` - 通过 SFTP 上传本地文件
-- `downloadfile_via_ssh` - 通过 SFTP 下载远程文件
+- `uploadfile_via_ssh` - 通过 SFTP 上传本地文件或目录（目录自动递归）
+- `downloadfile_via_ssh` - 通过 SFTP 下载远程文件或目录（目录自动递归）
 
 **公共参数：**
 | 参数 | 必填 | 说明 |
@@ -275,12 +275,12 @@ Host web
 **uploadfile_via_ssh / downloadfile_via_ssh 额外参数：**
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| local_path | 是 | 本地文件路径 |
-| remote_path | 是 | 远程文件路径。上传时若目标是目录（已存在或以 `/` 结尾），自动拼接本地文件名 |
+| local_path | 是 | 本地文件或目录路径 |
+| remote_path | 是 | 远程文件或目录路径。上传时若目标是目录（已存在或以 `/` 结尾），自动拼接本地文件/目录名 |
 | overwrite | 否 | 目标已存在时是否覆盖（默认 false） |
-| create_dirs | 否 | 是否创建缺失的父目录（默认 false） |
+| create_dirs | 否 | 单文件传输时是否创建缺失的父目录（默认 false） |
 
-不支持目录递归传输。默认不覆盖已有文件。
+目录会自动递归传输并创建缺失目录、保留权限；符号链接等特殊文件会跳过，结果中的 `skipped` 为跳过数量，`files` 为传输文件数。默认不覆盖已有文件（递归时只要有任一目标文件已存在就会在传输前报错）。
 
 ## 构建
 

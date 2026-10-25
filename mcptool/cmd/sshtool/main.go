@@ -70,18 +70,18 @@ func main() {
 
 	s.AddTool(
 		mcp.NewTool("uploadfile_via_ssh",
-			mcp.WithDescription("Upload a local file to a remote host over SFTP. hostname is an SSH config Host alias. Directories are not supported."),
+			mcp.WithDescription("Upload a local file or directory to a remote host over SFTP. hostname is an SSH config Host alias. Directories are transferred recursively."),
 			mcp.WithString("hostname",
 				mcp.Required(),
 				mcp.Description("SSH config Host alias, or a hostname / IP if not listed in ssh config"),
 			),
 			mcp.WithString("local_path",
 				mcp.Required(),
-				mcp.Description("Local file path to upload"),
+				mcp.Description("Local file or directory path to upload. Directories are transferred recursively."),
 			),
 			mcp.WithString("remote_path",
 				mcp.Required(),
-				mcp.Description("Remote destination path. If it is a directory (exists or ends with /), the local filename is appended."),
+				mcp.Description("Remote destination path. If it is a directory (exists or ends with /), the local file/directory name is appended."),
 			),
 			mcp.WithString("user",
 				mcp.Description("SSH username (overrides ssh config User)"),
@@ -110,18 +110,18 @@ func main() {
 
 	s.AddTool(
 		mcp.NewTool("downloadfile_via_ssh",
-			mcp.WithDescription("Download a remote file to the local filesystem over SFTP. hostname is an SSH config Host alias. Directories are not supported."),
+			mcp.WithDescription("Download a remote file or directory to the local filesystem over SFTP. hostname is an SSH config Host alias. Directories are transferred recursively."),
 			mcp.WithString("hostname",
 				mcp.Required(),
 				mcp.Description("SSH config Host alias, or a hostname / IP if not listed in ssh config"),
 			),
 			mcp.WithString("remote_path",
 				mcp.Required(),
-				mcp.Description("Remote file path to download"),
+				mcp.Description("Remote file or directory path to download. Directories are transferred recursively."),
 			),
 			mcp.WithString("local_path",
 				mcp.Required(),
-				mcp.Description("Local destination path. If it is a directory, the remote filename is appended."),
+				mcp.Description("Local destination path. If it is a directory, the remote file/directory name is appended."),
 			),
 			mcp.WithString("user",
 				mcp.Description("SSH username (overrides ssh config User)"),
@@ -247,9 +247,9 @@ func sshTransferHandler(request mcp.CallToolRequest, upload bool) (*mcp.CallTool
 
 	var result sftpTransferResult
 	if upload {
-		result, err = uploadFile(sftpClient, localPath, remotePath, overwrite, createDirs)
+		result, err = uploadPath(sftpClient, localPath, remotePath, overwrite, createDirs)
 	} else {
-		result, err = downloadFile(sftpClient, localPath, remotePath, overwrite, createDirs)
+		result, err = downloadPath(sftpClient, localPath, remotePath, overwrite, createDirs)
 	}
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
