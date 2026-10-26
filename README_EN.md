@@ -99,7 +99,7 @@ TUI for managing shell aliases, environment variables, and custom functions, bui
 | File | Content |
 |------|---------|
 | `~/.zsh_alias` / `~/.bash_alias` | `alias name='cmd'` |
-| `~/.zsh_env` / `~/.bash_env` | `export` / assignment / snippet |
+| `~/.zsh_env` / `~/.bash_env` | `export` / assignment / snippet / path |
 | `~/.zsh_functions` / `~/.bash_functions` | `name() { ... }` |
 
 Items in the same category are written together:
@@ -110,7 +110,21 @@ alias dim='docker images'
 alias dps='docker ps'
 ```
 
-Env entries support `export KEY=value`, `KEY=value`, and multi-line snippets (nvm/bun loaders, etc.). export / assign can keep alternate values; in the list, `tab` / `shift+tab` / space cycles the active value (with no alternates, `tab` still switches tabs). Alternates are stored as `# alt:` lines under the variable:
+Env entries support `export KEY=value`, `KEY=value`, multi-line snippets (nvm/bun loaders, etc.), and per-category PATH fragments. PATH entries are stored as `# path:` comments and assembled at the end of the file:
+
+```sh
+# ===== Go =====
+# path: $HOME/go/bin
+
+# ===== local =====
+# path: $HOME/.local/bin
+
+export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH"
+```
+
+Existing `export PATH=$PATH:...` lines are split into path entries on load; a full override such as `export PATH=/usr/bin:...` stays a normal export.
+
+export / assign can keep alternate values; in the list, `tab` / `shift+tab` / space cycles the active value (with no alternates, `tab` still switches tabs). Alternates are stored as `# alt:` lines under the variable:
 
 ```sh
 export HTTP_PROXY=http://127.0.0.1:7890

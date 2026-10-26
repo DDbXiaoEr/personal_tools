@@ -196,7 +196,7 @@ type model struct {
 - 表单整体 `boxStyle.Render(m.form.View())`
 - 标题 `新增 X` / `编辑 X: name`
 - 主键在编辑时 `readOnly`，显示 `dimStyle`（改名 = 删了再加）
-- 动态显隐用 `hidden` + `onChoice`（见 shellman env 的 export/assign/snippet）
+- 动态显隐用 `hidden` + `onChoice`（见 shellman env 的 export/assign/snippet/path）
 - `ctrl+s` **只改内存**，成功后 `setOK("已更新，按 s 保存到文件")`，不要直接写盘
 - 校验失败 `setErr`，留在表单
 - 多行 KV 用 textarea，「每行一条」；空行和 `#` 注释跳过

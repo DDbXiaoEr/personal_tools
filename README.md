@@ -99,7 +99,7 @@ Shell 别名、环境变量、自定义函数管理 TUI，基于 Bubble Tea 构�
 | 文件 | 内容 |
 |------|------|
 | `~/.zsh_alias` / `~/.bash_alias` | `alias name='cmd'` |
-| `~/.zsh_env` / `~/.bash_env` | `export` / 赋值 / snippet |
+| `~/.zsh_env` / `~/.bash_env` | `export` / 赋值 / snippet / path |
 | `~/.zsh_functions` / `~/.bash_functions` | `name() { ... }` |
 
 保存时同类条目写在同一分类下：
@@ -110,7 +110,21 @@ alias dim='docker images'
 alias dps='docker ps'
 ```
 
-Env 支持三种形态：`export KEY=value`、`KEY=value`、以及 nvm/bun 这类多行 snippet。export / assign 可写多个备选值，列表里用 `tab` / `shift+tab` / 空格循环切换当前值（无备选时 `tab` 仍切标签页）。备选值以 `# alt:` 写在变量下一行：
+Env 支持四种形态：`export KEY=value`、`KEY=value`、nvm/bun 这类多行 snippet，以及按分类追加的 PATH。PATH 条目写成 `# path:`，保存时在文件末尾统一拼接：
+
+```sh
+# ===== Go =====
+# path: $HOME/go/bin
+
+# ===== local =====
+# path: $HOME/.local/bin
+
+export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH"
+```
+
+已有的 `export PATH=$PATH:...` 读入时会拆成分类下的 path 条目；完整覆盖的 `export PATH=/usr/bin:...` 仍按普通 export 保留。
+
+export / assign 可写多个备选值，列表里用 `tab` / `shift+tab` / 空格循环切换当前值（无备选时 `tab` 仍切标签页）。备选值以 `# alt:` 写在变量下一行：
 
 ```sh
 export HTTP_PROXY=http://127.0.0.1:7890

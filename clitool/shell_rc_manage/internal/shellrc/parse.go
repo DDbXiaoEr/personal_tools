@@ -14,6 +14,7 @@ var (
 	reCategoryPlain = regexp.MustCompile(`^#\s*(.+?)\s*$`)
 	reSnippetName   = regexp.MustCompile(`^#\s*name:\s*(.+?)\s*$`)
 	reAlt           = regexp.MustCompile(`^#\s*alt:\s*(.*)$`)
+	rePath          = regexp.MustCompile(`^#\s*path:\s*(.*)$`)
 	reAlias         = regexp.MustCompile(`^alias\s+([A-Za-z0-9_./+:@-]+)=(.*)$`)
 	reExport        = regexp.MustCompile(`^export\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
 	reAssign        = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)=(.*)$`)
@@ -69,6 +70,14 @@ func Parse(src string, kind Kind) *File {
 			i++
 			continue
 		}
+		if item, ok := parsePathLine(trimmed); ok {
+			if item != nil {
+				item.Category = cat
+				f.Items = append(f.Items, item)
+			}
+			i++
+			continue
+		}
 		if item, n, ok := parseTypedItem(kind, lines, i); ok {
 			item.Category = cat
 			if extra := attachAlts(item, lines, i+n); extra > 0 {
@@ -93,6 +102,9 @@ func Parse(src string, kind Kind) *File {
 			Style:    StyleSnippet,
 		})
 		i += n
+	}
+	if kind == KindEnv {
+		f.Items = ConvertPATHItems(f.Items)
 	}
 	return f
 }
@@ -119,6 +131,9 @@ func parseCategory(trimmed string) (string, bool) {
 		return "", false
 	}
 	if reAlt.MatchString(trimmed) {
+		return "", false
+	}
+	if rePath.MatchString(trimmed) {
 		return "", false
 	}
 	if m := reCategoryPlain.FindStringSubmatch(trimmed); m != nil {
@@ -178,6 +193,18 @@ func collectAlts(lines []string, i int) ([]string, int) {
 		n++
 	}
 	return alts, n
+}
+
+func parsePathLine(trimmed string) (*Item, bool) {
+	m := rePath.FindStringSubmatch(trimmed)
+	if m == nil {
+		return nil, false
+	}
+	val := strings.TrimSpace(m[1])
+	if val == "" {
+		return nil, true
+	}
+	return &Item{Name: PathVarName, Value: val, Style: StylePath}, true
 }
 
 func parseSnippetName(trimmed string) (string, bool) {
@@ -375,6 +402,9 @@ func collectSnippet(kind Kind, lines []string, i int) (string, int) {
 			break
 		}
 		if _, ok := parseAlt(trimmed); ok {
+			break
+		}
+		if _, ok := parsePathLine(trimmed); ok {
 			break
 		}
 		if _, _, ok := parseTypedItem(kind, lines, i+n); ok {

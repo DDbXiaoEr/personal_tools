@@ -10,8 +10,12 @@ func (f *File) String() string {
 	if f == nil || len(f.Items) == 0 {
 		return ""
 	}
+	items := f.Items
+	if f.Kind == KindEnv {
+		items = ConvertPATHItems(items)
+	}
 	var b strings.Builder
-	order := CategoryOrder(f.Items)
+	order := CategoryOrder(items)
 	for i, cat := range order {
 		if i > 0 {
 			b.WriteByte('\n')
@@ -19,8 +23,21 @@ func (f *File) String() string {
 		b.WriteString("# ===== ")
 		b.WriteString(cat)
 		b.WriteString(" =====\n")
-		for _, it := range ItemsInCategory(f.Items, cat) {
+		for _, it := range ItemsInCategory(items, cat) {
 			writeItem(&b, it)
+		}
+	}
+	if f.Kind == KindEnv {
+		if assembled := AssemblePATH(PATHEntries(items)); assembled != "" {
+			if b.Len() > 0 && !strings.HasSuffix(b.String(), "\n\n") {
+				if !strings.HasSuffix(b.String(), "\n") {
+					b.WriteByte('\n')
+				}
+				b.WriteByte('\n')
+			}
+			b.WriteString("export PATH=")
+			b.WriteString(quoteValue(assembled, QuoteDouble))
+			b.WriteByte('\n')
 		}
 	}
 	return b.String()
@@ -47,6 +64,10 @@ func writeItem(b *strings.Builder, it *Item) {
 		b.WriteString(formatValue(it))
 		b.WriteByte('\n')
 		writeAlts(b, it)
+	case StylePath:
+		b.WriteString("# path: ")
+		b.WriteString(it.Value)
+		b.WriteByte('\n')
 	case StyleFunction:
 		b.WriteString(it.Name)
 		b.WriteString("() {\n")
@@ -114,6 +135,9 @@ func defaultQuote(it *Item) Quote {
 func (f *File) Save() error {
 	if f == nil || f.Path == "" {
 		return os.ErrInvalid
+	}
+	if f.Kind == KindEnv {
+		f.Items = ConvertPATHItems(f.Items)
 	}
 	dir := filepath.Dir(f.Path)
 	if dir != "" && dir != "." {

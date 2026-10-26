@@ -35,7 +35,10 @@ const (
 	StyleAssign   Style = "assign"
 	StyleSnippet  Style = "snippet"
 	StyleFunction Style = "function"
+	StylePath     Style = "path"
 )
+
+const PathVarName = "PATH"
 
 type Quote string
 
@@ -157,6 +160,12 @@ func (it *Item) DisplayName() string {
 	if it == nil {
 		return ""
 	}
+	if it.Style == StylePath {
+		if v := strings.TrimSpace(it.Value); v != "" {
+			return v
+		}
+		return PathVarName
+	}
 	if n := strings.TrimSpace(it.Name); n != "" {
 		return n
 	}
@@ -168,6 +177,9 @@ func (it *Item) DisplayName() string {
 
 func (it *Item) Preview() string {
 	if it == nil {
+		return ""
+	}
+	if it.Style == StylePath {
 		return ""
 	}
 	if it.Style == StyleFunction || it.Style == StyleSnippet {

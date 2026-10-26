@@ -387,7 +387,11 @@ func (m *model) buildForm(it *shellrc.Item) {
 	case shellrc.KindEnv:
 		title := "新增环境变量"
 		if it != nil {
-			title = "编辑环境变量: " + it.DisplayName()
+			if it.Style == shellrc.StylePath {
+				title = "编辑 PATH: " + it.Value
+			} else {
+				title = "编辑环境变量: " + it.DisplayName()
+			}
 		}
 		styleIdx := 0
 		if it != nil {
@@ -396,11 +400,13 @@ func (m *model) buildForm(it *shellrc.Item) {
 				styleIdx = 1
 			case shellrc.StyleSnippet:
 				styleIdx = 2
+			case shellrc.StylePath:
+				styleIdx = 3
 			}
 		}
 		category := newText("分类", "Go")
-		style := newChoice("类型", []string{"export", "assign", "snippet"}, styleIdx)
-		name := newText("名称", "PATH")
+		style := newChoice("类型", []string{"export", "assign", "snippet", "path"}, styleIdx)
+		name := newText("名称", "GOPATH")
 		value := newText("值", "$HOME/bin:$PATH")
 		body := newArea("内容", "[ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"", 8)
 		alts := newArea("备选值", "每行一个，例如：\nhttp://127.0.0.1:7890\nsocks5://127.0.0.1:1080", 5)
@@ -419,16 +425,25 @@ func (m *model) buildForm(it *shellrc.Item) {
 			category.setText(cat)
 		}
 		applyEnvVisibility := func(frm *form) {
-			snippet := frm.fields[1].choiceValue() == "snippet"
+			styleName := frm.fields[1].choiceValue()
+			snippet := styleName == "snippet"
+			path := styleName == "path"
+			frm.fields[2].hidden = path
 			frm.fields[3].hidden = snippet
 			frm.fields[4].hidden = !snippet
-			frm.fields[5].hidden = snippet
-			if snippet {
+			frm.fields[5].hidden = snippet || path
+			switch {
+			case snippet:
 				frm.fields[2].label = "标签"
 				frm.fields[2].input.Placeholder = "nvm"
-			} else {
+			case path:
+				frm.fields[3].label = "路径"
+				frm.fields[3].input.Placeholder = "$HOME/go/bin"
+			default:
 				frm.fields[2].label = "名称"
-				frm.fields[2].input.Placeholder = "PATH"
+				frm.fields[2].input.Placeholder = "GOPATH"
+				frm.fields[3].label = "值"
+				frm.fields[3].input.Placeholder = "$HOME/bin:$PATH"
 			}
 		}
 		style.onChoice = applyEnvVisibility
@@ -503,6 +518,10 @@ func (m *model) submitForm() error {
 		f.Items = append(f.Items, it)
 		m.cursor = len(f.Items) - 1
 	}
+	if m.tab == shellrc.KindEnv {
+		f.Items = shellrc.ConvertPATHItems(f.Items)
+		m.clampCursor()
+	}
 	m.dirty[m.tab] = true
 	return nil
 }
@@ -540,12 +559,17 @@ func (m *model) itemFromForm() (*shellrc.Item, error) {
 				Value:    body,
 				Style:    shellrc.StyleSnippet,
 			}, nil
+		case "path":
+			return pathItemFromValue(cat, m.form.fields[3].input.Value())
 		case "assign":
 			name := m.form.fields[2].text()
 			if name == "" {
 				return nil, fmt.Errorf("名称不能为空")
 			}
 			val := m.form.fields[3].input.Value()
+			if name == shellrc.PathVarName {
+				return pathItemFromValue(cat, val)
+			}
 			return &shellrc.Item{
 				Category: cat,
 				Name:     name,
@@ -560,6 +584,9 @@ func (m *model) itemFromForm() (*shellrc.Item, error) {
 				return nil, fmt.Errorf("名称不能为空")
 			}
 			val := m.form.fields[3].input.Value()
+			if name == shellrc.PathVarName {
+				return pathItemFromValue(cat, val)
+			}
 			return &shellrc.Item{
 				Category: cat,
 				Name:     name,
@@ -582,6 +609,19 @@ func (m *model) itemFromForm() (*shellrc.Item, error) {
 			Style:    shellrc.StyleFunction,
 		}, nil
 	}
+}
+
+func pathItemFromValue(cat, val string) (*shellrc.Item, error) {
+	parts := shellrc.SplitPATH(val)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("路径不能为空")
+	}
+	return &shellrc.Item{
+		Category: cat,
+		Name:     shellrc.PathVarName,
+		Value:    strings.Join(parts, ":"),
+		Style:    shellrc.StylePath,
+	}, nil
 }
 
 func inferQuote(v string) shellrc.Quote {
@@ -710,6 +750,8 @@ func styleTag(it *shellrc.Item) string {
 		parts = append(parts, "assign")
 	case shellrc.StyleSnippet:
 		parts = append(parts, "snippet")
+	case shellrc.StylePath:
+		parts = append(parts, "path")
 	}
 	if len(parts) == 0 {
 		return ""
@@ -740,7 +782,8 @@ func (m model) helpView() string {
 		"提示：\n" +
 			"  · 文件：~/.{zsh,bash}_{alias,env,functions}，按分类注释分组写出。\n" +
 			"  · 修改先留在内存，按 s 只写回当前标签对应文件，并生成 .bak。\n" +
-			"  · Env 类型：export / assign / snippet（nvm source、多行脚本等）。\n" +
+			"  · Env 类型：export / assign / snippet / path（按分类追加到 PATH）。\n" +
+			"  · PATH 按分类写成 # path:，保存时在文件末尾统一 export PATH=\"...:$PATH\"。\n" +
 			"  · export/assign 可写多个备选值，列表中 tab / shift+tab / 空格循环切换。\n" +
 			"  · 无备选值时 tab 仍切换标签页。备选值以 # alt: 写在变量下一行。\n" +
 			"  · 函数体和 snippet 在表单 textarea 中编辑，ctrl+s 应用。\n" +

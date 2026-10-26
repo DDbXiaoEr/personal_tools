@@ -75,10 +75,10 @@ func TestParseEnvMixed(t *testing.T) {
 	if f.Items[0].Value != "/usr/local/go/bin" {
 		t.Fatalf("GO_BIN_PATH value = %q", f.Items[0].Value)
 	}
-	if f.Items[1].Style != StyleExport || f.Items[1].Name != "PATH" {
+	if f.Items[1].Style != StylePath || f.Items[1].Name != "PATH" {
 		t.Fatalf("item1 = %+v", f.Items[1])
 	}
-	if !strings.HasPrefix(f.Items[1].Value, "$PATH:") {
+	if f.Items[1].Value != "/Users/quanxiaoer/go/bin" {
 		t.Fatalf("PATH value = %q", f.Items[1].Value)
 	}
 	if f.Items[2].Name != "NVM_DIR" || f.Items[2].Value != "$HOME/.nvm" {
@@ -266,6 +266,182 @@ func TestLoadStore(t *testing.T) {
 	}
 	if s.File(KindEnv).Path != filepath.Join(dir, ".zsh_env") {
 		t.Fatalf("env path = %s", s.File(KindEnv).Path)
+	}
+}
+
+func TestParsePathComments(t *testing.T) {
+	src := `# ===== Go =====
+# path: $HOME/go/bin
+# path: /usr/local/go/bin
+
+# ===== local =====
+# path: $HOME/.local/bin
+`
+	f := Parse(src, KindEnv)
+	if len(f.Items) != 3 {
+		t.Fatalf("items = %d: %#v", len(f.Items), names(f))
+	}
+	if f.Items[0].Style != StylePath || f.Items[0].Value != "$HOME/go/bin" || f.Items[0].Cat() != "Go" {
+		t.Fatalf("item0 = %+v", f.Items[0])
+	}
+	if f.Items[2].Value != "$HOME/.local/bin" || f.Items[2].Cat() != "local" {
+		t.Fatalf("item2 = %+v", f.Items[2])
+	}
+}
+
+func TestConvertAssembledPATH(t *testing.T) {
+	src := `# ===== Go =====
+export PATH=$PATH:$HOME/go/bin:/usr/local/go/bin
+`
+	f := Parse(src, KindEnv)
+	if len(f.Items) != 2 {
+		t.Fatalf("items = %d: %#v", len(f.Items), names(f))
+	}
+	if f.Items[0].Style != StylePath || f.Items[0].Value != "$HOME/go/bin" {
+		t.Fatalf("item0 = %+v", f.Items[0])
+	}
+	if f.Items[1].Value != "/usr/local/go/bin" {
+		t.Fatalf("item1 = %+v", f.Items[1])
+	}
+}
+
+func TestConvertPrependPATH(t *testing.T) {
+	src := `# ===== Bun =====
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+# ===== opencode =====
+export PATH="$HOME/.opencode/bin:$PATH"
+`
+	f := Parse(src, KindEnv)
+	if len(f.Items) != 3 {
+		t.Fatalf("items = %d: %#v", len(f.Items), names(f))
+	}
+	if f.Items[0].Name != "BUN_INSTALL" {
+		t.Fatalf("item0 = %+v", f.Items[0])
+	}
+	if f.Items[1].Style != StylePath || f.Items[1].Value != "$BUN_INSTALL/bin" || f.Items[1].Cat() != "Bun" {
+		t.Fatalf("item1 = %+v", f.Items[1])
+	}
+	if f.Items[2].Style != StylePath || f.Items[2].Value != "$HOME/.opencode/bin" || f.Items[2].Cat() != "opencode" {
+		t.Fatalf("item2 = %+v", f.Items[2])
+	}
+}
+
+func TestUserEnvPATHRoundTrip(t *testing.T) {
+	src := `# ===== Go =====
+GO_BIN_PATH="/opt/go1.27.3/bin/"
+export PATH="$PATH:/Users/quanxiaoer/go/bin:$GO_BIN_PATH:/Users/quanxiaoer/my-tool:/Users/quanxiaoer/.local/bin"
+
+# ===== Bun =====
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+[ -s "/Users/quanxiaoer/.bun/_bun" ] && source "/Users/quanxiaoer/.bun/_bun"
+
+# ===== opencode =====
+export PATH="/Users/quanxiaoer/.opencode/bin:$PATH"
+
+# ===== my-tools =====
+export PATH="/Users/quanxiaoer/my-tools:/usr/local/opt/libpq/bin:$PATH"
+export PATH="/Users/quanxiaoer/Documents/Code/my-tools/bin/clitool:$PATH"
+`
+	f := Parse(src, KindEnv)
+	out := f.String()
+	want := []string{
+		"# path: /Users/quanxiaoer/go/bin",
+		"# path: $GO_BIN_PATH",
+		"# path: /Users/quanxiaoer/my-tool",
+		"# path: /Users/quanxiaoer/.local/bin",
+		"# path: $BUN_INSTALL/bin",
+		"# path: /Users/quanxiaoer/.opencode/bin",
+		"# path: /Users/quanxiaoer/my-tools",
+		"# path: /usr/local/opt/libpq/bin",
+		"# path: /Users/quanxiaoer/Documents/Code/my-tools/bin/clitool",
+		`export PATH="/Users/quanxiaoer/go/bin:$GO_BIN_PATH:/Users/quanxiaoer/my-tool:/Users/quanxiaoer/.local/bin:$BUN_INSTALL/bin:/Users/quanxiaoer/.opencode/bin:/Users/quanxiaoer/my-tools:/usr/local/opt/libpq/bin:/Users/quanxiaoer/Documents/Code/my-tools/bin/clitool:$PATH"`,
+	}
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Fatalf("missing %q\n%s", w, out)
+		}
+	}
+	if strings.Count(out, "export PATH=") != 1 {
+		t.Fatalf("want 1 assembled PATH, got:\n%s", out)
+	}
+	f2 := Parse(out, KindEnv)
+	var paths []string
+	for _, it := range f2.Items {
+		if it.Style == StylePath {
+			paths = append(paths, it.Value)
+		}
+	}
+	if strings.Join(paths, ",") != "/Users/quanxiaoer/go/bin,$GO_BIN_PATH,/Users/quanxiaoer/my-tool,/Users/quanxiaoer/.local/bin,$BUN_INSTALL/bin,/Users/quanxiaoer/.opencode/bin,/Users/quanxiaoer/my-tools,/usr/local/opt/libpq/bin,/Users/quanxiaoer/Documents/Code/my-tools/bin/clitool" {
+		t.Fatalf("paths = %#v", paths)
+	}
+}
+
+func TestPATHRoundTripAssemblesExport(t *testing.T) {
+	src := `# ===== Go =====
+# path: $HOME/go/bin
+# ===== local =====
+# path: $HOME/.local/bin
+`
+	f := Parse(src, KindEnv)
+	out := f.String()
+	if !strings.Contains(out, "# path: $HOME/go/bin") || !strings.Contains(out, "# path: $HOME/.local/bin") {
+		t.Fatalf("path comments lost:\n%s", out)
+	}
+	if !strings.Contains(out, `export PATH="$HOME/go/bin:$HOME/.local/bin:$PATH"`) {
+		t.Fatalf("assembled PATH missing:\n%s", out)
+	}
+	f2 := Parse(out, KindEnv)
+	if len(f2.Items) != 2 {
+		t.Fatalf("roundtrip count %d -> %d\n%s", len(f.Items), len(f2.Items), out)
+	}
+	if f2.Items[0].Style != StylePath || f2.Items[0].Value != "$HOME/go/bin" {
+		t.Fatalf("item0 = %+v", f2.Items[0])
+	}
+	if f2.Items[1].Cat() != "local" || f2.Items[1].Value != "$HOME/.local/bin" {
+		t.Fatalf("item1 = %+v", f2.Items[1])
+	}
+}
+
+func TestAssembledPATHDedupedOnParse(t *testing.T) {
+	src := `# ===== Go =====
+# path: $HOME/go/bin
+export PATH="$PATH:$HOME/go/bin"
+`
+	f := Parse(src, KindEnv)
+	if len(f.Items) != 1 {
+		t.Fatalf("items = %d: %#v\n", len(f.Items), names(f))
+	}
+	if f.Items[0].Style != StylePath || f.Items[0].Value != "$HOME/go/bin" {
+		t.Fatalf("item0 = %+v", f.Items[0])
+	}
+}
+
+func TestFullPATHOverrideKept(t *testing.T) {
+	src := `export PATH=/usr/bin:/bin
+`
+	f := Parse(src, KindEnv)
+	if len(f.Items) != 1 || f.Items[0].Style != StyleExport || f.Items[0].Value != "/usr/bin:/bin" {
+		t.Fatalf("item = %+v", f.Items)
+	}
+	out := f.String()
+	if strings.Contains(out, "# path:") {
+		t.Fatalf("override should not become path:\n%s", out)
+	}
+	if !strings.Contains(out, "export PATH=") || !strings.Contains(out, "/usr/bin:/bin") {
+		t.Fatalf("override lost:\n%s", out)
+	}
+}
+
+func TestEmptyPathCommentSkipped(t *testing.T) {
+	src := `# ===== Go =====
+# path:
+export FOO=bar
+`
+	f := Parse(src, KindEnv)
+	if len(f.Items) != 1 || f.Items[0].Name != "FOO" {
+		t.Fatalf("items = %#v", names(f))
 	}
 }
 
