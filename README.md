@@ -14,7 +14,8 @@ my-tools/
 │   ├── viewcsv_xlsx/     # CSV / XLSX 查看器
 │   ├── opencode_config/  # opencode 配置管理 TUI
 │   ├── shell_rc_manage/  # shell 别名 / 环境变量 / 函数 TUI
-│   └── ansible_inventory/# Ansible 清单管理 TUI
+│   ├── ansible_inventory/# Ansible 清单管理 TUI
+│   └── mtls_proxy/       # mTLS 代理 / 证书验证
 └── mcptool/              # MCP 工具
     └── cmd/sshtool/      # SSH MCP Server
 ```
@@ -241,6 +242,44 @@ ansiman -file ./inventory.yml
 表单中 `tab` 切字段，`ctrl+s` 应用，`esc` 取消。主机额外变量与子组用 textarea，每行一条。
 
 > 保存时会生成 `<清单文件>.bak` 备份。写回保持原格式（INI 或 YAML）。删除组时，组内主机移到 `ungrouped`。改名请删除后新增。
+
+### mtlsproxy
+
+mTLS 证书验证 CLI。一次性探测目标，或监听明文端口当反向代理：浏览器不用装 p12，工具代持客户端证书去连 mTLS 服务。
+
+```bash
+# 直接探测
+mtlsproxy -target https://api.example.com:8443 -cert client.crt -key client.key -ca ca.crt
+
+# HTTP 反向代理：浏览器打开 http://127.0.0.1:8000 即访问目标
+mtlsproxy -listen 127.0.0.1:8000 -target https://api.example.com:8443 -cert client.crt -key client.key -ca ca.crt
+
+# TCP 隧道（gRPC / 裸 TCP）：客户端连明文端口
+mtlsproxy -tcp -listen 127.0.0.1:8000 -target host:50051 -alpn h2 -cert client.crt -key client.key -ca ca.crt
+
+# 只检查本地证书（过期、私钥是否匹配、可选 CA 链）
+mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
+```
+
+**flag：**
+
+| 参数 | 说明 |
+|------|------|
+| `-target` | 目标地址，如 `https://host:8443` |
+| `-cert` / `-key` | 客户端证书与私钥；`-key` 省略则与 `-cert` 同一文件 |
+| `-ca` | 校验服务端的 CA |
+| `-listen` | 监听地址；只写端口时绑定 `127.0.0.1` |
+| `-tcp` | TCP 字节流隧道，适用于 gRPC / 裸 TCP |
+| `-alpn` | TLS ALPN，逗号分隔；gRPC 用 `h2` |
+| `-inspect` | 不连服务端，只检查本地证书 |
+| `-method` | 握手后再发 HTTP，如 `GET` |
+| `-path` | HTTP 路径，默认 `/` |
+| `-sni` | 覆盖 TLS ServerName |
+| `-insecure` | 跳过服务端证书校验 |
+| `-timeout` | 超时，默认 10s |
+| `-json` | JSON 输出 |
+
+`-listen` 默认 HTTP 反向代理（页面和 API）。`/__mtls/check` 只探测握手（失败 502），`/__mtls/health` 返回 `ok`。`-tcp` 为明文 TCP 隧道，客户端不用证书；gRPC 请加 `-alpn h2`，客户端连 `127.0.0.1:8000` 走 insecure/h2c。失败退出码 1。
 
 ### sshtool (MCP Server)
 

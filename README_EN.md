@@ -14,7 +14,8 @@ my-tools/
 │   ├── viewcsv_xlsx/     # CSV / XLSX viewer
 │   ├── opencode_config/  # opencode config manager TUI
 │   ├── shell_rc_manage/  # shell alias / env / function TUI
-│   └── ansible_inventory/# Ansible inventory manager TUI
+│   ├── ansible_inventory/# Ansible inventory manager TUI
+│   └── mtls_proxy/       # mTLS proxy / certificate checker
 └── mcptool/              # MCP tools
     └── cmd/sshtool/      # SSH MCP Server
 ```
@@ -241,6 +242,44 @@ ansiman -file ./inventory.yml
 In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Extra host vars and child groups use a textarea, one item per line.
 
 > Saving writes a `<inventory>.bak` backup and keeps the original format (INI or YAML). Deleting a group moves its hosts to `ungrouped`. Rename by deleting and adding.
+
+### mtlsproxy
+
+CLI to verify mTLS certificates. Probe a target once, or listen in the clear as a reverse proxy: the browser does not need a p12; the tool presents the client cert to the mTLS server.
+
+```bash
+# one-shot probe
+mtlsproxy -target https://api.example.com:8443 -cert client.crt -key client.key -ca ca.crt
+
+# HTTP reverse proxy: open http://127.0.0.1:8000 in a browser
+mtlsproxy -listen 127.0.0.1:8000 -target https://api.example.com:8443 -cert client.crt -key client.key -ca ca.crt
+
+# TCP tunnel (gRPC / raw TCP): client connects in the clear
+mtlsproxy -tcp -listen 127.0.0.1:8000 -target host:50051 -alpn h2 -cert client.crt -key client.key -ca ca.crt
+
+# local cert only (expiry, key match, optional CA)
+mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `-target` | Target, e.g. `https://host:8443` |
+| `-cert` / `-key` | Client cert and key; omit `-key` if both are in `-cert` |
+| `-ca` | CA used to verify the server |
+| `-listen` | Listen address; port-only binds `127.0.0.1` |
+| `-tcp` | Raw TCP tunnel for gRPC / non-HTTP |
+| `-alpn` | TLS ALPN, comma-separated; gRPC uses `h2` |
+| `-inspect` | Check local cert only, no network |
+| `-method` | After handshake, send HTTP (e.g. `GET`) |
+| `-path` | HTTP path, default `/` |
+| `-sni` | Override TLS ServerName |
+| `-insecure` | Skip server cert verify |
+| `-timeout` | Timeout, default 10s |
+| `-json` | JSON output |
+
+`-listen` defaults to an HTTP reverse proxy (pages and APIs). `/__mtls/check` only probes the handshake (502 on failure); `/__mtls/health` returns `ok`. `-tcp` is a cleartext TCP tunnel; for gRPC add `-alpn h2` and connect to `127.0.0.1:8000` with insecure/h2c. Exit code 1 on failure.
 
 ### sshtool (MCP Server)
 

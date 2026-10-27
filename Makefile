@@ -28,13 +28,14 @@ $(eval $(call cli,viewcsv_xlsx,clitool/viewcsv_xlsx,viewcsv_xlsx,viewcsv_xlsx,$(
 $(eval $(call cli,occonfig,clitool/opencode_config,occonfig,occonfig,$(STRIP)))
 $(eval $(call cli,shellman,clitool/shell_rc_manage,shellman,shellman,$(STRIP)))
 $(eval $(call cli,ansibleman,clitool/ansible_inventory,ansibleman,ansiman,$(STRIP)))
+$(eval $(call cli,mtlsproxy,clitool/mtls_proxy,mtlsproxy,mtlsproxy,$(STRIP)))
 
 .PHONY: linux-ansiman
 linux-ansiman: linux-ansibleman
 
-build-clitool: build-markdown2pdf build-sshman build-viewcsv_xlsx build-occonfig build-shellman build-ansibleman
+build-clitool: build-markdown2pdf build-sshman build-viewcsv_xlsx build-occonfig build-shellman build-ansibleman build-mtlsproxy
 
-linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv_xlsx linux-occonfig linux-shellman linux-ansiman
+linux-clitool: linux-markdown2pdf linux-sshman linux-viewcsv_xlsx linux-occonfig linux-shellman linux-ansiman linux-mtlsproxy
 
 # $(call mcp,target,pkg)
 define mcp
