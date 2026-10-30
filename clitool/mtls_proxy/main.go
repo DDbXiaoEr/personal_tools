@@ -138,7 +138,7 @@ func usage(msg string) {
   mtlsproxy -tcp -listen 127.0.0.1:8000 -target host:50051 -alpn h2 -cert client.crt -key client.key -ca ca.crt
   mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 
--ui 启动网页控制台，在浏览器里填写目标、监听端口和客户端证书后启停代理。
+-ui 启动网页控制台，可添加多条转发配置，分别启动、停止和删除。
 -listen 默认 HTTP 反向代理：浏览器访问监听地址即可打开目标页面。
 -tcp 为字节流隧道，适用于 gRPC / 裸 TCP；客户端连明文端口，工具用证书做 mTLS。
 HTTP 模式 /__mtls/check 只探测握手，/__mtls/health 返回 ok。

@@ -3,17 +3,22 @@ package mtls
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
 
-func TestControlStartStopHTTP(t *testing.T) {
+func TestControlAddStartStopDelete(t *testing.T) {
 	b := mustBundle(t)
 	ctl := NewControl()
+	defer ctl.Close()
 
-	st, err := ctl.Start(StartRequest{
+	fw, err := ctl.Add(ForwardRequest{
+		Name:           "本地调试",
 		Mode:           "http",
 		Listen:         "127.0.0.1:0",
 		Target:         "https://127.0.0.1:1",
@@ -25,29 +30,136 @@ func TestControlStartStopHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !st.Running || st.Mode != "http" || st.Listen == "" {
-		t.Fatalf("bad status: %+v", st)
+	if fw.Running || fw.ID == "" || fw.Mode != "http" {
+		t.Fatalf("bad add result: %+v", fw)
 	}
-	if st.Cert == nil || st.Cert.Subject == "" {
-		t.Fatalf("missing cert: %+v", st)
+	if fw.Cert == nil || fw.Cert.Subject == "" {
+		t.Fatalf("missing cert: %+v", fw)
 	}
 
-	resp, err := http.Get("http://" + st.Listen + "/__mtls/health")
+	started, err := ctl.StartForward(fw.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("health status = %d", resp.StatusCode)
+	if !started.Running || started.ActualListen == "" {
+		t.Fatalf("bad start result: %+v", started)
+	}
+	if err := checkHealth(started.ActualListen); err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := ctl.Start(StartRequest{Listen: "127.0.0.1:0", Target: "https://127.0.0.1:1"}); err == nil {
+	if _, err := ctl.StartForward(fw.ID); err == nil {
 		t.Fatal("second start should fail while running")
 	}
 
-	stopped := ctl.Stop()
+	stopped, err := ctl.StopForward(fw.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if stopped.Running {
 		t.Fatalf("still running: %+v", stopped)
+	}
+	if err := checkHealth(started.ActualListen); err == nil {
+		t.Fatal("listener should be closed after stop")
+	}
+
+	if err := ctl.DeleteForward(fw.ID); err != nil {
+		t.Fatal(err)
+	}
+	if list := ctl.Status().Forwards; len(list) != 0 {
+		t.Fatalf("forward not deleted: %+v", list)
+	}
+}
+
+func TestControlMultipleForwardsParallel(t *testing.T) {
+	b := mustBundle(t)
+	ctl := NewControl()
+	defer ctl.Close()
+
+	add := func(name string) ForwardStatus {
+		t.Helper()
+		fw, err := ctl.Add(ForwardRequest{
+			Name:           name,
+			Mode:           "http",
+			Listen:         "127.0.0.1:0",
+			Target:         "https://127.0.0.1:1",
+			CertPath:       b.ClientCert,
+			KeyPath:        b.ClientKey,
+			CAPath:         b.CACert,
+			TimeoutSeconds: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fw
+	}
+
+	first := add("第一个")
+	second := add("第二个")
+
+	first, err := ctl.StartForward(first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err = ctl.StartForward(second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ActualListen == second.ActualListen {
+		t.Fatalf("listeners should differ: %s", first.ActualListen)
+	}
+	if err := checkHealth(first.ActualListen); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkHealth(second.ActualListen); err != nil {
+		t.Fatal(err)
+	}
+
+	list := ctl.Status().Forwards
+	if len(list) != 2 {
+		t.Fatalf("want 2 forwards, got %d", len(list))
+	}
+	running := 0
+	for _, fw := range list {
+		if fw.Running {
+			running++
+		}
+	}
+	if running != 2 {
+		t.Fatalf("want 2 running, got %d", running)
+	}
+
+	if err := ctl.DeleteForward(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkHealth(first.ActualListen); err == nil {
+		t.Fatal("deleted forward listener should be closed")
+	}
+	if err := checkHealth(second.ActualListen); err != nil {
+		t.Fatalf("second forward should keep running: %v", err)
+	}
+}
+
+func TestControlDuplicateListen(t *testing.T) {
+	b := mustBundle(t)
+	ctl := NewControl()
+	defer ctl.Close()
+
+	addr := freeAddr(t)
+	req := ForwardRequest{
+		Mode:           "http",
+		Listen:         addr,
+		Target:         "https://127.0.0.1:1",
+		CertPath:       b.ClientCert,
+		KeyPath:        b.ClientKey,
+		CAPath:         b.CACert,
+		TimeoutSeconds: 1,
+	}
+	if _, err := ctl.Add(req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ctl.Add(req); err == nil {
+		t.Fatal("duplicate listen should be rejected")
 	}
 }
 
@@ -67,7 +179,8 @@ func TestControlInMemoryCert(t *testing.T) {
 	}
 
 	ctl := NewControl()
-	st, err := ctl.Start(StartRequest{
+	defer ctl.Close()
+	fw, err := ctl.Add(ForwardRequest{
 		Mode:           "tcp",
 		Listen:         "127.0.0.1:0",
 		Target:         "https://example.com:8443",
@@ -80,12 +193,15 @@ func TestControlInMemoryCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ctl.Stop()
-	if !st.Running || st.Mode != "tcp" {
-		t.Fatalf("bad status: %+v", st)
+	fw, err = ctl.StartForward(fw.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if st.Cert == nil || st.Cert.Subject == "" {
-		t.Fatalf("missing in-memory cert: %+v", st)
+	if !fw.Running || fw.Mode != "tcp" {
+		t.Fatalf("bad status: %+v", fw)
+	}
+	if fw.Cert == nil || fw.Cert.Subject == "" {
+		t.Fatalf("missing in-memory cert: %+v", fw)
 	}
 }
 
@@ -94,9 +210,10 @@ func TestControlAPI(t *testing.T) {
 	ctl := NewControl()
 	srv := httptest.NewServer(ctl.Handler())
 	defer srv.Close()
-	defer ctl.Stop()
+	defer ctl.Close()
 
-	start := StartRequest{
+	start := ForwardRequest{
+		Name:           "API 转发",
 		Mode:           "http",
 		Listen:         "127.0.0.1:0",
 		Target:         "https://127.0.0.1:1",
@@ -105,57 +222,32 @@ func TestControlAPI(t *testing.T) {
 		CAPath:         b.CACert,
 		TimeoutSeconds: 1,
 	}
-	payload, err := json.Marshal(start)
-	if err != nil {
-		t.Fatal(err)
+	first := apiAdd(t, srv.URL, start)
+	if first.Running || first.ID == "" {
+		t.Fatalf("bad add: %+v", first)
 	}
-	resp, err := http.Post(srv.URL+"/api/start", "application/json", bytes.NewReader(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	var started struct {
-		OK     bool          `json:"ok"`
-		Error  string        `json:"error"`
-		Status ControlStatus `json:"status"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&started); err != nil {
-		t.Fatal(err)
-	}
-	if !started.OK || !started.Status.Running {
-		t.Fatalf("start failed: %+v", started)
+	second := apiAdd(t, srv.URL, start)
+	if second.ID == first.ID {
+		t.Fatalf("ids should differ: %s", first.ID)
 	}
 
-	statusResp, err := http.Get(srv.URL + "/api/status")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer statusResp.Body.Close()
-	var status struct {
-		OK     bool          `json:"ok"`
-		Status ControlStatus `json:"status"`
-	}
-	if err := json.NewDecoder(statusResp.Body).Decode(&status); err != nil {
-		t.Fatal(err)
-	}
-	if !status.OK || !status.Status.Running {
-		t.Fatalf("status: %+v", status)
+	status := apiStatus(t, srv.URL)
+	if len(status) != 2 {
+		t.Fatalf("want 2 forwards, got %d", len(status))
 	}
 
-	stopResp, err := http.Post(srv.URL+"/api/stop", "application/json", nil)
-	if err != nil {
-		t.Fatal(err)
+	first = apiAction(t, srv.URL+"/api/forwards/"+first.ID+"/start")
+	if !first.Running {
+		t.Fatalf("start failed: %+v", first)
 	}
-	defer stopResp.Body.Close()
-	var stopped struct {
-		OK     bool          `json:"ok"`
-		Status ControlStatus `json:"status"`
+	first = apiAction(t, srv.URL+"/api/forwards/"+first.ID+"/stop")
+	if first.Running {
+		t.Fatalf("stop failed: %+v", first)
 	}
-	if err := json.NewDecoder(stopResp.Body).Decode(&stopped); err != nil {
-		t.Fatal(err)
-	}
-	if !stopped.OK || stopped.Status.Running {
-		t.Fatalf("stop failed: %+v", stopped)
+
+	apiDelete(t, srv.URL+"/api/forwards/"+first.ID)
+	if status := apiStatus(t, srv.URL); len(status) != 1 {
+		t.Fatalf("want 1 forward after delete, got %d", len(status))
 	}
 }
 
@@ -186,7 +278,7 @@ func TestControlRejectsNonJSON(t *testing.T) {
 	srv := httptest.NewServer(ctl.Handler())
 	defer srv.Close()
 
-	resp, err := http.Post(srv.URL+"/api/start", "text/plain", bytes.NewReader([]byte(`{}`)))
+	resp, err := http.Post(srv.URL+"/api/forwards", "text/plain", bytes.NewReader([]byte(`{}`)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,9 +288,115 @@ func TestControlRejectsNonJSON(t *testing.T) {
 	}
 }
 
-func TestControlStartInvalidTarget(t *testing.T) {
+func TestControlAddInvalidTarget(t *testing.T) {
 	ctl := NewControl()
-	if _, err := ctl.Start(StartRequest{Listen: "127.0.0.1:0", Target: "http://example.com"}); err == nil {
+	if _, err := ctl.Add(ForwardRequest{Listen: "127.0.0.1:0", Target: "http://example.com"}); err == nil {
 		t.Fatal("http target should be rejected")
 	}
+}
+
+type apiResponse struct {
+	OK       bool            `json:"ok"`
+	Error    string          `json:"error"`
+	Forward  ForwardStatus   `json:"forward"`
+	Forwards []ForwardStatus `json:"forwards"`
+}
+
+func apiAdd(t *testing.T, base string, req ForwardRequest) ForwardStatus {
+	t.Helper()
+	payload, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Post(base+"/api/forwards", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out apiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK {
+		t.Fatalf("add failed: %s", out.Error)
+	}
+	return out.Forward
+}
+
+func apiAction(t *testing.T, url string) ForwardStatus {
+	t.Helper()
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out apiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK {
+		t.Fatalf("action failed: %s", out.Error)
+	}
+	return out.Forward
+}
+
+func apiDelete(t *testing.T, url string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodDelete, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out apiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK {
+		t.Fatalf("delete failed: %s", out.Error)
+	}
+}
+
+func apiStatus(t *testing.T, base string) []ForwardStatus {
+	t.Helper()
+	resp, err := http.Get(base + "/api/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var out apiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK {
+		t.Fatalf("status failed: %s", out.Error)
+	}
+	return out.Forwards
+}
+
+func checkHealth(addr string) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://" + addr + "/__mtls/health")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("health status = %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func freeAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	return addr
 }

@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,17 +19,25 @@ import (
 var controlHTML []byte
 
 type ControlStatus struct {
+	Forwards []ForwardStatus `json:"forwards"`
+}
+
+type ForwardStatus struct {
+	ID            string     `json:"id"`
+	Name          string     `json:"name,omitempty"`
 	Running       bool       `json:"running"`
-	Mode          string     `json:"mode,omitempty"`
-	Listen        string     `json:"listen,omitempty"`
-	Target        string     `json:"target,omitempty"`
+	Mode          string     `json:"mode"`
+	Listen        string     `json:"listen"`
+	ActualListen  string     `json:"actual_listen,omitempty"`
+	Target        string     `json:"target"`
 	StartedAt     *time.Time `json:"started_at,omitempty"`
 	UptimeSeconds int64      `json:"uptime_seconds,omitempty"`
 	Cert          *CertInfo  `json:"cert,omitempty"`
 	Error         string     `json:"error,omitempty"`
 }
 
-type StartRequest struct {
+type ForwardRequest struct {
+	Name           string `json:"name"`
 	Mode           string `json:"mode"`
 	Listen         string `json:"listen"`
 	Target         string `json:"target"`
@@ -45,23 +54,29 @@ type StartRequest struct {
 }
 
 type controlRun struct {
+	id     string
+	name   string
+	mode   string
+	listen string
+	cfg    Config
+	cert   *CertInfo
+
+	running   bool
+	actual    string
+	startedAt time.Time
 	cancel    context.CancelFunc
 	done      chan struct{}
-	cfg       Config
-	mode      string
-	listen    string
-	startedAt time.Time
-	cert      *CertInfo
+	err       string
 }
 
 type Control struct {
-	mu        sync.Mutex
-	run       *controlRun
-	lastError string
+	mu   sync.Mutex
+	runs map[string]*controlRun
+	seq  int
 }
 
 func NewControl() *Control {
-	return &Control{}
+	return &Control{runs: make(map[string]*controlRun)}
 }
 
 func ServeControl(ctx context.Context, addr string) error {
@@ -85,13 +100,13 @@ func ServeControl(ctx context.Context, addr string) error {
 	log.Printf("控制台 http://%s", ln.Addr().String())
 	select {
 	case <-ctx.Done():
-		ctl.Stop()
+		ctl.Close()
 		shCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shCtx)
 		return nil
 	case err := <-errCh:
-		ctl.Stop()
+		ctl.Close()
 		if err == http.ErrServerClosed {
 			return nil
 		}
@@ -114,155 +129,283 @@ func (c *Control) Handler() http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(controlHTML)
 	})
-	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			methodNotAllowed(w)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": c.Status()})
+	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "forwards": c.Status().Forwards})
 	})
-	mux.HandleFunc("/api/start", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			methodNotAllowed(w)
-			return
-		}
+	mux.HandleFunc("POST /api/forwards", func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 			writeJSON(w, http.StatusUnsupportedMediaType, map[string]any{"ok": false, "error": "需要 application/json"})
 			return
 		}
-		var req StartRequest
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<20))
+		var req ForwardRequest
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20))
 		if err := dec.Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "请求解析失败: " + err.Error()})
 			return
 		}
-		st, err := c.Start(req)
+		fw, err := c.Add(req)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error(), "status": st})
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": st})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "forward": fw})
 	})
-	mux.HandleFunc("/api/stop", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			methodNotAllowed(w)
+	mux.HandleFunc("POST /api/forwards/{id}/start", func(w http.ResponseWriter, r *http.Request) {
+		fw, err := c.StartForward(r.PathValue("id"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error(), "forward": fw})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": c.Stop()})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "forward": fw})
+	})
+	mux.HandleFunc("POST /api/forwards/{id}/stop", func(w http.ResponseWriter, r *http.Request) {
+		fw, err := c.StopForward(r.PathValue("id"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error(), "forward": fw})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "forward": fw})
+	})
+	mux.HandleFunc("DELETE /api/forwards/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := c.DeleteForward(r.PathValue("id")); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 	return mux
 }
 
-func (c *Control) Start(req StartRequest) (ControlStatus, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.run != nil {
-		return c.statusLocked(), fmt.Errorf("已有代理在运行，请先停止")
-	}
+func (c *Control) Add(req ForwardRequest) (ForwardStatus, error) {
 	cfg, mode, listen, err := req.toConfig()
 	if err != nil {
-		return ControlStatus{}, err
+		return ForwardStatus{}, err
 	}
-	_, sni, _, err := parseTarget(cfg.Target)
-	if err != nil {
-		return ControlStatus{}, err
+	if err := validateConfig(cfg); err != nil {
+		return ForwardStatus{}, err
 	}
-	if cfg.ServerName != "" {
-		sni = cfg.ServerName
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !portZero(listen) {
+		for _, run := range c.runs {
+			if run.listen == listen {
+				return ForwardStatus{}, fmt.Errorf("监听地址 %s 已被配置 %s 使用", listen, run.label())
+			}
+		}
 	}
-	if _, _, err := buildTLSConfig(cfg, sni, time.Now()); err != nil {
-		return ControlStatus{}, err
-	}
-	ln, err := net.Listen("tcp", listen)
-	if err != nil {
-		return ControlStatus{}, fmt.Errorf("监听 %s 失败: %w", listen, err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
+	c.seq++
 	run := &controlRun{
-		cancel:    cancel,
-		done:      make(chan struct{}),
-		cfg:       cfg,
-		mode:      mode,
-		listen:    ln.Addr().String(),
-		startedAt: time.Now(),
-		cert:      certInfoOf(cfg),
+		id:     fmt.Sprintf("fw-%04d", c.seq),
+		name:   strings.TrimSpace(req.Name),
+		mode:   mode,
+		listen: listen,
+		cfg:    cfg,
+		cert:   certInfoOf(cfg),
 	}
-	c.lastError = ""
-	c.run = run
-	go c.serveRun(ctx, ln, run)
-	return c.statusLocked(), nil
+	c.runs[run.id] = run
+	return run.status(time.Now()), nil
 }
 
-func (c *Control) serveRun(ctx context.Context, ln net.Listener, run *controlRun) {
+func (c *Control) StartForward(id string) (ForwardStatus, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	run := c.runs[id]
+	if run == nil {
+		return ForwardStatus{}, fmt.Errorf("未找到转发 %s", id)
+	}
+	if run.running {
+		return run.status(time.Now()), fmt.Errorf("转发 %s 已在运行", run.label())
+	}
+
+	var h http.Handler
+	var err error
+	if run.mode == "tcp" {
+		err = validateConfig(run.cfg)
+	} else {
+		h, err = NewHandler(run.cfg, false)
+	}
+	if err != nil {
+		run.err = err.Error()
+		return run.status(time.Now()), err
+	}
+	ln, err := net.Listen("tcp", run.listen)
+	if err != nil {
+		run.err = fmt.Sprintf("监听 %s 失败: %v", run.listen, err)
+		return run.status(time.Now()), fmt.Errorf("%s", run.err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	run.running = true
+	run.actual = ln.Addr().String()
+	run.startedAt = time.Now()
+	run.cancel = cancel
+	run.done = make(chan struct{})
+	run.err = ""
+	run.cert = certInfoOf(run.cfg)
+	log.Printf("转发 %s 已启动：%s %s -> %s", run.label(), strings.ToUpper(run.mode), run.actual, run.cfg.Target)
+
+	go c.serveRun(ctx, ln, run, h)
+	return run.status(time.Now()), nil
+}
+
+func (c *Control) serveRun(ctx context.Context, ln net.Listener, run *controlRun, h http.Handler) {
 	var err error
 	if run.mode == "tcp" {
 		err = ServeTCPListener(ctx, ln, run.cfg)
 	} else {
-		var h http.Handler
-		h, err = NewHandler(run.cfg, false)
-		if err == nil {
-			err = ServeListener(ctx, ln, h)
-		} else {
-			_ = ln.Close()
+		err = ServeListener(ctx, ln, h)
+	}
+
+	c.mu.Lock()
+	if c.runs[run.id] == run {
+		run.running = false
+		run.actual = ""
+		run.cancel = nil
+		if err != nil {
+			run.err = err.Error()
+			log.Printf("转发 %s 退出: %v", run.label(), err)
 		}
 	}
-	c.mu.Lock()
-	if c.run == run {
-		c.run = nil
-	}
-	if err != nil {
-		c.lastError = err.Error()
-		log.Printf("代理退出: %v", err)
-	}
+	done := run.done
 	c.mu.Unlock()
-	close(run.done)
+	close(done)
 }
 
-func (c *Control) Stop() ControlStatus {
+func (c *Control) StopForward(id string) (ForwardStatus, error) {
 	c.mu.Lock()
-	run := c.run
+	run := c.runs[id]
 	if run == nil {
-		st := c.statusLocked()
 		c.mu.Unlock()
-		return st
+		return ForwardStatus{}, fmt.Errorf("未找到转发 %s", id)
 	}
 	c.mu.Unlock()
-
-	run.cancel()
-	select {
-	case <-run.done:
-	case <-time.After(6 * time.Second):
-	}
+	c.stopRun(run)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.statusLocked()
+	return run.status(time.Now()), nil
+}
+
+func (c *Control) DeleteForward(id string) error {
+	c.mu.Lock()
+	run := c.runs[id]
+	if run == nil {
+		c.mu.Unlock()
+		return fmt.Errorf("未找到转发 %s", id)
+	}
+	c.mu.Unlock()
+
+	c.stopRun(run)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.runs[id] == run {
+		delete(c.runs, id)
+	}
+	return nil
+}
+
+func (c *Control) Close() {
+	c.mu.Lock()
+	runs := make([]*controlRun, 0, len(c.runs))
+	for _, run := range c.runs {
+		runs = append(runs, run)
+	}
+	c.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for _, run := range runs {
+		wg.Add(1)
+		go func(run *controlRun) {
+			defer wg.Done()
+			c.stopRun(run)
+		}(run)
+	}
+	wg.Wait()
+}
+
+func (c *Control) stopRun(run *controlRun) {
+	c.mu.Lock()
+	if !run.running {
+		c.mu.Unlock()
+		return
+	}
+	cancel := run.cancel
+	done := run.done
+	c.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	select {
+	case <-done:
+	case <-time.After(6 * time.Second):
+	}
 }
 
 func (c *Control) Status() ControlStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.statusLocked()
-}
-
-func (c *Control) statusLocked() ControlStatus {
-	st := ControlStatus{Error: c.lastError}
-	if c.run == nil {
-		return st
+	now := time.Now()
+	st := ControlStatus{Forwards: make([]ForwardStatus, 0, len(c.runs))}
+	for _, run := range c.runs {
+		st.Forwards = append(st.Forwards, run.status(now))
 	}
-	st.Running = true
-	st.Error = ""
-	st.Mode = c.run.mode
-	st.Listen = c.run.listen
-	st.Target = c.run.cfg.Target
-	started := c.run.startedAt
-	st.StartedAt = &started
-	st.UptimeSeconds = int64(time.Since(started).Seconds())
-	st.Cert = c.run.cert
+	sort.Slice(st.Forwards, func(i, j int) bool {
+		return st.Forwards[i].ID < st.Forwards[j].ID
+	})
 	return st
 }
 
-func (req StartRequest) toConfig() (Config, string, string, error) {
+func (run *controlRun) label() string {
+	if run.name != "" {
+		return run.name
+	}
+	return run.id
+}
+
+func (run *controlRun) status(now time.Time) ForwardStatus {
+	st := ForwardStatus{
+		ID:      run.id,
+		Name:    run.name,
+		Running: run.running,
+		Mode:    run.mode,
+		Listen:  run.listen,
+		Target:  run.cfg.Target,
+		Cert:    run.cert,
+		Error:   run.err,
+	}
+	if run.running {
+		st.ActualListen = run.actual
+		started := run.startedAt
+		st.StartedAt = &started
+		st.UptimeSeconds = int64(now.Sub(started).Seconds())
+		st.Error = ""
+	}
+	return st
+}
+
+func validateConfig(cfg Config) error {
+	_, sni, _, err := parseTarget(cfg.Target)
+	if err != nil {
+		return err
+	}
+	if cfg.ServerName != "" {
+		sni = cfg.ServerName
+	}
+	if _, _, err := buildTLSConfig(cfg, sni, time.Now()); err != nil {
+		return err
+	}
+	return nil
+}
+
+func portZero(listen string) bool {
+	_, port, err := net.SplitHostPort(listen)
+	return err == nil && port == "0"
+}
+
+func (req ForwardRequest) toConfig() (Config, string, string, error) {
 	mode := strings.ToLower(strings.TrimSpace(req.Mode))
 	if mode == "" {
 		mode = "http"
