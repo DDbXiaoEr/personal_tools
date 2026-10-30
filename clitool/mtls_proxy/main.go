@@ -10,11 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"mtlsproxy/internal/mtls"
 )
 
 func main() {
 	ui := flag.String("ui", "", "启动网页控制台，如 127.0.0.1:9000")
+	tui := flag.Bool("tui", false, "启动终端控制台")
 	listen := flag.String("listen", "", "监听地址，如 127.0.0.1:8080；设置后进入代理模式")
 	target := flag.String("target", "", "目标 mTLS 服务，如 https://api.example.com:8443")
 	cert := flag.String("cert", "", "客户端证书 PEM")
@@ -30,6 +33,11 @@ func main() {
 	tcpMode := flag.Bool("tcp", false, "TCP 隧道（gRPC / 裸 TCP）；默认 HTTP 反向代理")
 	alpn := flag.String("alpn", "", "TLS ALPN，逗号分隔；gRPC 用 h2")
 	flag.Parse()
+
+	if *tui {
+		runTUI()
+		return
+	}
 
 	if *ui != "" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -101,6 +109,16 @@ func main() {
 	}
 }
 
+func runTUI() {
+	ctl := mtls.NewControl()
+	defer ctl.Close()
+	p := tea.NewProgram(newModel(ctl), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "运行失败: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func printOut(v any, text string, jsonOut bool) {
 	if jsonOut {
 		s, err := mtls.FormatJSON(v)
@@ -132,12 +150,14 @@ func splitCSV(s string) []string {
 func usage(msg string) {
 	fmt.Fprintf(os.Stderr, "%s\n\n", msg)
 	fmt.Fprintf(os.Stderr, `用法:
+  mtlsproxy -tui
   mtlsproxy -ui 127.0.0.1:9000
   mtlsproxy -target https://host:port -cert client.crt -key client.key -ca ca.crt
   mtlsproxy -listen 127.0.0.1:8000 -target https://host:port -cert client.crt -key client.key -ca ca.crt
   mtlsproxy -tcp -listen 127.0.0.1:8000 -target host:50051 -alpn h2 -cert client.crt -key client.key -ca ca.crt
   mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 
+-tui 启动终端控制台，按 a 添加多条转发配置，空格启停，d 删除。
 -ui 启动网页控制台，可添加多条转发配置，分别启动、停止和删除。
 -listen 默认 HTTP 反向代理：浏览器访问监听地址即可打开目标页面。
 -tcp 为字节流隧道，适用于 gRPC / 裸 TCP；客户端连明文端口，工具用证书做 mTLS。

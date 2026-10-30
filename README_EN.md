@@ -248,6 +248,9 @@ In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Extra host vars a
 CLI to verify mTLS certificates. Probe a target once, or listen in the clear as a reverse proxy: the browser does not need a p12; the tool presents the client cert to the mTLS server.
 
 ```bash
+# terminal console: add multiple forwards and start, stop, or delete each one
+mtlsproxy -tui
+
 # web console: add multiple forwards and start, stop, or delete each one
 mtlsproxy -ui 127.0.0.1:9000
 
@@ -268,6 +271,7 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 
 | Flag | Description |
 |------|-------------|
+| `-tui` | Start the terminal console; add forwards, toggle with space, delete with d |
 | `-ui` | Start the web console, e.g. `127.0.0.1:9000`; add multiple forwards and start, stop, or delete each one |
 | `-target` | Target, e.g. `https://host:8443` |
 | `-cert` / `-key` | Client cert and key; omit `-key` if both are in `-cert` |
@@ -286,6 +290,21 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 `-listen` defaults to an HTTP reverse proxy (pages and APIs). `/__mtls/check` only probes the handshake (502 on failure); `/__mtls/health` returns `ok`. `-tcp` is a cleartext TCP tunnel; for gRPC add `-alpn h2` and connect to `127.0.0.1:8000` with insecure/h2c. Exit code 1 on failure.
 
 `-ui` serves a single embedded HTML page with no external assets. Certs can be uploaded as PEM files (kept in memory only) or given as server-side paths. The console runs multiple forwards in parallel, each started, stopped, and deleted independently; configs live in memory only and are cleared when the process exits. Binding the console to `127.0.0.1` is recommended.
+
+`-tui` is the terminal version with the same capabilities, except certs must be given as server-side paths (no PEM upload). Forwards also live in memory only and are cleared on exit.
+
+| Key | Action |
+|-----|--------|
+| `↑` `k` / `↓` `j` | Move cursor |
+| `g` / `home`, `G` / `end` | Jump to first / last |
+| `a` | Add a forward (opens form) |
+| `space` / `enter` | Start or stop the selected forward |
+| `d` / `delete` | Delete the selected forward (stops it first), with confirmation |
+| `r` | Refresh status |
+| `?` | Toggle help |
+| `q` / `ctrl+c` | Quit; asks first when forwards are running |
+
+In the form, `tab` / `shift+tab` move between fields, `←→` / space toggle choices and checkboxes, `ctrl+s` adds the config, and `esc` cancels.
 
 ### sshtool (MCP Server)
 
