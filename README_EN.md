@@ -248,6 +248,9 @@ In forms: `tab` moves fields, `ctrl+s` applies, `esc` cancels. Extra host vars a
 CLI to verify mTLS certificates. Probe a target once, or listen in the clear as a reverse proxy: the browser does not need a p12; the tool presents the client cert to the mTLS server.
 
 ```bash
+# web console: configure target, listen port, and client cert in the browser
+mtlsproxy -ui 127.0.0.1:9000
+
 # one-shot probe
 mtlsproxy -target https://api.example.com:8443 -cert client.crt -key client.key -ca ca.crt
 
@@ -265,6 +268,7 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 
 | Flag | Description |
 |------|-------------|
+| `-ui` | Start the web console, e.g. `127.0.0.1:9000`; configure certs, target, and local port, then start/stop the proxy |
 | `-target` | Target, e.g. `https://host:8443` |
 | `-cert` / `-key` | Client cert and key; omit `-key` if both are in `-cert` |
 | `-ca` | CA used to verify the server |
@@ -280,6 +284,8 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 | `-json` | JSON output |
 
 `-listen` defaults to an HTTP reverse proxy (pages and APIs). `/__mtls/check` only probes the handshake (502 on failure); `/__mtls/health` returns `ok`. `-tcp` is a cleartext TCP tunnel; for gRPC add `-alpn h2` and connect to `127.0.0.1:8000` with insecure/h2c. Exit code 1 on failure.
+
+`-ui` serves a single embedded HTML page with no external assets. Certs can be uploaded as PEM files (kept in memory only) or given as server-side paths. Binding the console to `127.0.0.1` is recommended.
 
 ### sshtool (MCP Server)
 

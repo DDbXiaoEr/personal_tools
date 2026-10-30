@@ -3,6 +3,7 @@ package mtls
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,9 @@ type Config struct {
 	CertFile   string
 	KeyFile    string
 	CAFile     string
+	CertPEM    []byte
+	KeyPEM     []byte
+	CAPEM      []byte
 	Insecure   bool
 	ServerName string
 	Timeout    time.Duration
@@ -116,7 +120,21 @@ func buildTLSConfig(cfg Config, sni string, now time.Time) (*tls.Config, []CertI
 		NextProtos:         append([]string{}, cfg.ALPN...),
 	}
 	var infos []CertInfo
-	if cfg.CertFile != "" {
+	if len(cfg.CertPEM) > 0 {
+		keyPEM := cfg.KeyPEM
+		if len(keyPEM) == 0 {
+			keyPEM = cfg.CertPEM
+		}
+		pair, err := tls.X509KeyPair(cfg.CertPEM, keyPEM)
+		if err != nil {
+			return nil, nil, fmt.Errorf("加载证书和私钥: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{pair}
+		infos, err = InfosFromTLSCert(pair, now)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if cfg.CertFile != "" {
 		pair, err := LoadPair(cfg.CertFile, cfg.KeyFile)
 		if err != nil {
 			return nil, nil, err
@@ -127,7 +145,13 @@ func buildTLSConfig(cfg Config, sni string, now time.Time) (*tls.Config, []CertI
 			return nil, nil, err
 		}
 	}
-	if cfg.CAFile != "" {
+	if len(cfg.CAPEM) > 0 {
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(cfg.CAPEM) {
+			return nil, nil, fmt.Errorf("CA 内容不含有效 PEM 证书")
+		}
+		tlsCfg.RootCAs = pool
+	} else if cfg.CAFile != "" {
 		pool, err := LoadCertPool(cfg.CAFile)
 		if err != nil {
 			return nil, nil, err

@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mtlsproxy 控制台</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f2ed;
+    --card: #ffffff;
+    --ink: #1c2520;
+    --muted: #66716a;
+    --line: #ddd9d0;
+    --accent: #0f766e;
+    --accent-ink: #ffffff;
+    --danger: #b42318;
+    --danger-bg: #fef3f2;
+    --ok: #12715b;
+    --warn: #b54708;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 16px 64px;
+    background:
+      radial-gradient(1200px 500px at 10% -10%, #e4f2ed 0, transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
+  .brand { font-size: 22px; font-weight: 750; letter-spacing: -0.03em; }
+  .brand span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 1px 2px rgba(28, 37, 32, 0.04), 0 10px 30px -24px rgba(28, 37, 32, 0.3);
+    margin-bottom: 16px;
+  }
+  .status-head { display: flex; align-items: center; gap: 10px; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #9aa39d; box-shadow: 0 0 0 4px rgba(154, 163, 157, 0.16);
+    flex: none;
+  }
+  .dot.running { background: var(--ok); box-shadow: 0 0 0 4px rgba(18, 113, 91, 0.16); }
+  .dot.error { background: var(--danger); box-shadow: 0 0 0 4px rgba(180, 35, 24, 0.14); }
+  .state { font-weight: 650; }
+  .spacer { flex: 1; }
+  .meta { margin-top: 12px; display: grid; gap: 6px; color: var(--muted); font-size: 13.5px; }
+  .meta:empty { display: none; }
+  .meta b { color: var(--ink); font-weight: 600; }
+  .meta code, .mono { font-family: var(--mono); font-size: 12.5px; }
+  h2 { margin: 0 0 16px; font-size: 15px; letter-spacing: -0.01em; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .span2 { grid-column: 1 / -1; }
+  label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+  input, select {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fbfaf7;
+    color: var(--ink);
+    padding: 9px 11px;
+    font: inherit;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  input:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    background: #fff;
+  }
+  input[type="file"] { padding: 7px 9px; font-size: 12.5px; color: var(--muted); }
+  fieldset {
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    padding: 14px;
+    margin: 18px 0 0;
+  }
+  legend { padding: 0 6px; font-size: 12.5px; color: var(--muted); }
+  .file-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .file-row:last-child { margin-bottom: 0; }
+  details { margin-top: 16px; border-top: 1px dashed var(--line); padding-top: 14px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; user-select: none; }
+  details .grid { margin-top: 14px; }
+  .check { display: flex; align-items: center; gap: 9px; align-self: end; font-size: 13px; color: var(--muted); min-height: 38px; }
+  .check input { width: 16px; height: 16px; accent-color: var(--accent); }
+  .actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+  button {
+    border: 0; border-radius: 9px; padding: 10px 18px;
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: transform 80ms ease, opacity 120ms ease, background 120ms ease;
+  }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .primary { background: var(--accent); color: var(--accent-ink); }
+  .primary:hover:not(:disabled) { background: #0c5f59; }
+  .danger { background: var(--danger-bg); color: var(--danger); border: 1px solid #f3c6c3; }
+  .danger:hover:not(:disabled) { background: #fde8e6; }
+  .ghost {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--line); padding: 5px 12px; font-size: 12.5px; font-weight: 500;
+  }
+  .ghost:hover:not(:disabled) { background: #f6f4f0; color: var(--ink); }
+  .result {
+    margin: 16px 0 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #f6f4f0;
+    border: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--muted);
+  }
+  .result.ok { background: #eff8f4; border-color: #c6e3d8; color: var(--ok); }
+  .result.err { background: var(--danger-bg); border-color: #f3c6c3; color: var(--danger); }
+  .hint { margin-top: 10px; color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 640px) {
+    body { padding-top: 20px; }
+    .grid, .file-row { grid-template-columns: 1fr; }
+    .span2 { grid-column: auto; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand">mtls<span>proxy</span></div>
+    <div class="sub">网页控制台 · 客户端证书代持</div>
+  </header>
+
+  <section class="card" aria-live="polite">
+    <div class="status-head">
+      <span id="dot" class="dot"></span>
+      <span id="stateText" class="state">未运行</span>
+      <span class="spacer"></span>
+      <button id="refresh" class="ghost" type="button">刷新状态</button>
+    </div>
+    <div id="statusMeta" class="meta"></div>
+  </section>
+
+  <form id="form" class="card" autocomplete="off">
+    <h2>代理配置</h2>
+    <div class="grid">
+      <label>模式
+        <select id="mode">
+          <option value="http">HTTP 反向代理</option>
+          <option value="tcp">TCP 隧道（gRPC / 裸 TCP）</option>
+        </select>
+      </label>
+      <label>本地监听地址
+        <input id="listen" placeholder="127.0.0.1:8000" spellcheck="false">
+      </label>
+      <label class="span2">目标地址
+        <input id="target" placeholder="https://api.example.com:8443" spellcheck="false">
+      </label>
+    </div>
+
+    <fieldset>
+      <legend>客户端证书</legend>
+      <div class="file-row">
+        <label>证书 PEM 文件
+          <input type="file" id="certFile" accept=".pem,.crt,.cer,.txt">
+        </label>
+        <label>或服务器上的路径
+          <input id="certPath" placeholder="/path/client.crt" spellcheck="false">
+        </label>
+      </div>
+      <div class="file-row">
+        <label>私钥 PEM 文件（可与证书同一文件）
+          <input type="file" id="keyFile" accept=".pem,.key,.txt">
+        </label>
+        <label>或服务器上的路径
+          <input id="keyPath" placeholder="/path/client.key" spellcheck="false">
+        </label>
+      </div>
+      <div class="file-row">
+        <label>CA PEM 文件（可选）
+          <input type="file" id="caFile" accept=".pem,.crt,.cer,.txt">
+        </label>
+        <label>或服务器上的路径
+          <input id="caPath" placeholder="/path/ca.crt" spellcheck="false">
+        </label>
+      </div>
+      <div class="hint">选择文件会直接内嵌到请求里，不会写入磁盘；留空则使用路径或系统根证书。</div>
+    </fieldset>
+
+    <details>
+      <summary>高级选项</summary>
+      <div class="grid">
+        <label>SNI 覆盖
+          <input id="sni" placeholder="默认取目标主机名" spellcheck="false">
+        </label>
+        <label>ALPN
+          <input id="alpn" placeholder="gRPC 用 h2" spellcheck="false">
+        </label>
+        <label>握手超时（秒）
+          <input id="timeout" type="number" min="1" step="1" value="10">
+        </label>
+        <label class="check">
+          <input id="insecure" type="checkbox">
+          跳过服务端证书校验
+        </label>
+      </div>
+    </details>
+
+    <div class="actions">
+      <button id="startBtn" class="primary" type="submit">启动代理</button>
+      <button id="stopBtn" class="danger" type="button" disabled>停止</button>
+    </div>
+    <pre id="result" class="result" hidden></pre>
+  </form>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let pollTimer = null;
+
+  async function readFile(input) {
+    const file = input.files && input.files[0];
+    return file ? await file.text() : "";
+  }
+
+  function fmtTime(value) {
+    if (!value) return "";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    const pad = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+      " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  }
+
+  function fmtUptime(sec) {
+    sec = Number(sec) || 0;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) return h + " 小时 " + m + " 分";
+    if (m > 0) return m + " 分 " + s + " 秒";
+    return s + " 秒";
+  }
+
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
+  function renderStatus(st) {
+    st = st || {};
+    const running = !!st.running;
+    $("dot").className = "dot" + (running ? " running" : (st.error ? " error" : ""));
+    $("stateText").textContent = running ? "运行中" : "未运行";
+    $("startBtn").disabled = running;
+    $("stopBtn").disabled = !running;
+
+    const meta = $("statusMeta");
+    if (!running) {
+      if (st.error) {
+        meta.innerHTML = '<div>上次错误：<b>' + escapeHTML(st.error) + "</b></div>";
+      } else {
+        meta.innerHTML = '<div>填写下方配置后点击“启动代理”。控制台只监听本机时最安全。</div>';
+      }
+      return;
+    }
+
+    const mode = st.mode === "tcp" ? "TCP 隧道" : "HTTP 反向代理";
+    const rows = [
+      "<div>模式：<b>" + mode + "</b></div>",
+      '<div>监听：<code>http://' + escapeHTML(st.listen || "") + "</code></div>",
+      '<div>目标：<code>' + escapeHTML(st.target || "") + "</code></div>",
+      "<div>已运行：" + escapeHTML(fmtUptime(st.uptime_seconds)) + "（启动于 " + escapeHTML(fmtTime(st.started_at)) + "）</div>"
+    ];
+    if (st.cert) {
+      const exp = st.cert.not_after ? fmtTime(st.cert.not_after) : "";
+      let cert = "<div>客户端证书：<b>" + escapeHTML(st.cert.subject || "") + "</b>";
+      if (exp) cert += "，有效期至 " + escapeHTML(exp);
+      if (st.cert.expired) cert += "，<b>已过期</b>";
+      if (st.cert.not_yet_valid) cert += "，<b>尚未生效</b>";
+      cert += "</div>";
+      rows.push(cert);
+    }
+    if (st.mode === "tcp") {
+      rows.push('<div>客户端连接：<code>' + escapeHTML(st.listen || "") + "</code>（明文 / h2c）</div>");
+    } else {
+      rows.push('<div>浏览器访问：<code>http://' + escapeHTML(st.listen || "") + "</code></div>");
+    }
+    meta.innerHTML = rows.join("");
+  }
+
+  function showResult(message, kind) {
+    const box = $("result");
+    box.hidden = false;
+    box.className = "result" + (kind ? " " + kind : "");
+    box.textContent = message;
+  }
+
+  async function loadStatus() {
+    try {
+      const res = await fetch("/api/status", { cache: "no-store" });
+      const data = await res.json();
+      renderStatus(data.status);
+    } catch (err) {
+      $("dot").className = "dot error";
+      $("stateText").textContent = "控制台连接失败";
+      $("statusMeta").innerHTML = "<div>" + escapeHTML(err.message) + "</div>";
+    }
+  }
+
+  async function startProxy(event) {
+    event.preventDefault();
+    const btn = $("startBtn");
+    btn.disabled = true;
+    showResult("正在启动…");
+    try {
+      const body = {
+        mode: $("mode").value,
+        listen: $("listen").value.trim(),
+        target: $("target").value.trim(),
+        cert_pem: await readFile($("certFile")),
+        key_pem: await readFile($("keyFile")),
+        ca_pem: await readFile($("caFile")),
+        cert_path: $("certPath").value.trim(),
+        key_path: $("keyPath").value.trim(),
+        ca_path: $("caPath").value.trim(),
+        sni: $("sni").value.trim(),
+        alpn: $("alpn").value.trim(),
+        insecure: $("insecure").checked,
+        timeout_seconds: Number($("timeout").value) || 10
+      };
+      const res = await fetch("/api/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        showResult("已启动：" + body.mode.toUpperCase() + "  http://" +
+          (data.status && data.status.listen ? data.status.listen : body.listen) +
+          "  ->  " + body.target, "ok");
+      } else {
+        showResult("启动失败：" + (data.error || "未知错误"), "err");
+      }
+      renderStatus(data.status);
+    } catch (err) {
+      showResult("启动失败：" + err.message, "err");
+      btn.disabled = false;
+    }
+  }
+
+  async function stopProxy() {
+    const btn = $("stopBtn");
+    btn.disabled = true;
+    showResult("正在停止…");
+    try {
+      const res = await fetch("/api/stop", { method: "POST" });
+      const data = await res.json();
+      showResult(data.ok ? "已停止" : "停止失败：" + (data.error || "未知错误"), data.ok ? "ok" : "err");
+      renderStatus(data.status);
+    } catch (err) {
+      showResult("停止失败：" + err.message, "err");
+    } finally {
+      $("stopBtn").disabled = false;
+    }
+  }
+
+  $("form").addEventListener("submit", startProxy);
+  $("stopBtn").addEventListener("click", stopProxy);
+  $("refresh").addEventListener("click", loadStatus);
+
+  loadStatus();
+  pollTimer = setInterval(loadStatus, 3000);
+  window.addEventListener("beforeunload", () => clearInterval(pollTimer));
+})();
+</script>
+</body>
+</html>

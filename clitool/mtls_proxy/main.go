@@ -14,6 +14,7 @@ import (
 )
 
 func main() {
+	ui := flag.String("ui", "", "启动网页控制台，如 127.0.0.1:9000")
 	listen := flag.String("listen", "", "监听地址，如 127.0.0.1:8080；设置后进入代理模式")
 	target := flag.String("target", "", "目标 mTLS 服务，如 https://api.example.com:8443")
 	cert := flag.String("cert", "", "客户端证书 PEM")
@@ -29,6 +30,17 @@ func main() {
 	tcpMode := flag.Bool("tcp", false, "TCP 隧道（gRPC / 裸 TCP）；默认 HTTP 反向代理")
 	alpn := flag.String("alpn", "", "TLS ALPN，逗号分隔；gRPC 用 h2")
 	flag.Parse()
+
+	if *ui != "" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		fmt.Fprintf(os.Stderr, "mtlsproxy 控制台 http://%s（只监听本机最安全）\n", *ui)
+		if err := mtls.ServeControl(ctx, *ui); err != nil {
+			fmt.Fprintf(os.Stderr, "控制台运行失败: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if *inspect {
 		if *cert == "" {
@@ -120,11 +132,13 @@ func splitCSV(s string) []string {
 func usage(msg string) {
 	fmt.Fprintf(os.Stderr, "%s\n\n", msg)
 	fmt.Fprintf(os.Stderr, `用法:
+  mtlsproxy -ui 127.0.0.1:9000
   mtlsproxy -target https://host:port -cert client.crt -key client.key -ca ca.crt
   mtlsproxy -listen 127.0.0.1:8000 -target https://host:port -cert client.crt -key client.key -ca ca.crt
   mtlsproxy -tcp -listen 127.0.0.1:8000 -target host:50051 -alpn h2 -cert client.crt -key client.key -ca ca.crt
   mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 
+-ui 启动网页控制台，在浏览器里填写目标、监听端口和客户端证书后启停代理。
 -listen 默认 HTTP 反向代理：浏览器访问监听地址即可打开目标页面。
 -tcp 为字节流隧道，适用于 gRPC / 裸 TCP；客户端连明文端口，工具用证书做 mTLS。
 HTTP 模式 /__mtls/check 只探测握手，/__mtls/health 返回 ok。
