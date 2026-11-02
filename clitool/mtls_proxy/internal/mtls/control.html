@@ -140,6 +140,7 @@
   .ghost:hover:not(:disabled) { background: #f6f4f0; color: var(--ink); }
   .result {
     margin: 0 0 16px;
+    scroll-margin-top: 16px;
     padding: 12px 14px;
     border-radius: 10px;
     background: #f6f4f0;
@@ -359,6 +360,12 @@
     box.textContent = message;
   }
 
+  function revealResult() {
+    const box = $("result");
+    if (box.hidden) return;
+    box.scrollIntoView({ block: "start" });
+  }
+
   async function loadStatus() {
     if (busy) return;
     try {
@@ -394,6 +401,7 @@
     };
     if (!body.listen || !body.target) {
       showResult("请填写本地监听地址和目标地址", "err");
+      revealResult();
       return;
     }
     busy = true;
@@ -416,6 +424,7 @@
     } finally {
       busy = false;
       await loadStatus();
+      revealResult();
     }
   }
 
@@ -440,6 +449,7 @@
     } finally {
       busy = false;
       await loadStatus();
+      revealResult();
     }
   }
 
