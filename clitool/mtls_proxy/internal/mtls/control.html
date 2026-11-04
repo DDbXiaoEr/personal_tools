@@ -184,7 +184,7 @@
   </section>
 
   <form id="form" class="card" autocomplete="off">
-    <h2>新增转发配置</h2>
+    <h2 id="formTitle">新增转发配置</h2>
     <div class="grid">
       <label class="span2">名称（可选）
         <input id="name" placeholder="如：测试环境 API" spellcheck="false">
@@ -253,6 +253,7 @@
 
     <div class="actions">
       <button id="addBtn" class="primary" type="submit">添加配置</button>
+      <button id="cancelBtn" class="ghost" type="button" hidden>取消编辑</button>
       <button class="ghost" type="reset">清空表单</button>
     </div>
     <div class="hint">添加后不会自动启动，点击列表里的“启动”。转发配置只保存在内存中，程序退出后清空。</div>
@@ -264,6 +265,8 @@
   const $ = (id) => document.getElementById(id);
   let pollTimer = null;
   let busy = false;
+  let editingId = "";
+  let forwardsCache = [];
 
   async function readFile(input) {
     const file = input.files && input.files[0];
@@ -334,6 +337,7 @@
           rows.join("") +
         "</div>" +
         '<div class="fwd-actions">' + startStop +
+          '<button class="ghost" data-action="edit" data-id="' + escapeHTML(f.id) + '">编辑</button>' +
           '<button class="ghost" data-action="delete" data-id="' + escapeHTML(f.id) + '">删除</button>' +
         "</div>" +
       "</div>";
@@ -341,6 +345,7 @@
 
   function renderForwards(forwards) {
     const list = Array.isArray(forwards) ? forwards : [];
+    forwardsCache = list;
     const running = list.filter((f) => f.running).length;
     $("dot").className = "dot" + (running > 0 ? " running" : "");
     $("summary").textContent = list.length
@@ -380,6 +385,45 @@
     }
   }
 
+  function setEditing(id) {
+    editingId = id;
+    const editing = id !== "";
+    $("formTitle").textContent = editing ? "编辑转发配置" : "新增转发配置";
+    $("addBtn").textContent = editing ? "保存修改" : "添加配置";
+    $("cancelBtn").hidden = !editing;
+  }
+
+  function exitEditing() {
+    if (editingId === "") return;
+    setEditing("");
+    $("form").reset();
+  }
+
+  function beginEdit(id) {
+    const f = forwardsCache.find((item) => item.id === id);
+    if (!f) return;
+    setEditing(id);
+    $("name").value = f.name || "";
+    $("mode").value = f.mode === "tcp" ? "tcp" : "http";
+    $("listen").value = f.listen || "";
+    $("target").value = f.target || "";
+    $("certPath").value = f.cert_path || "";
+    $("keyPath").value = f.key_path || "";
+    $("caPath").value = f.ca_path || "";
+    $("sni").value = f.sni || "";
+    $("alpn").value = f.alpn || "";
+    $("timeout").value = f.timeout_seconds || 10;
+    $("insecure").checked = !!f.insecure;
+    $("certFile").value = "";
+    $("keyFile").value = "";
+    $("caFile").value = "";
+    showResult(f.running
+      ? "正在编辑运行中的配置，保存后会先停止，需要重新点击“启动”。"
+      : "正在编辑配置，修改后点击“保存修改”。");
+    revealResult();
+    $("form").scrollIntoView({ block: "start" });
+  }
+
   async function addForward(event) {
     event.preventDefault();
     if (busy) return;
@@ -404,23 +448,30 @@
       revealResult();
       return;
     }
+    const editing = editingId !== "";
     busy = true;
-    showResult("正在添加…");
+    showResult(editing ? "正在保存…" : "正在添加…");
     try {
-      const res = await fetch("/api/forwards", {
-        method: "POST",
+      const url = editing
+        ? "/api/forwards/" + encodeURIComponent(editingId)
+        : "/api/forwards";
+      const res = await fetch(url, {
+        method: editing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
       const data = await res.json();
       if (data.ok) {
-        showResult("已添加配置。点击列表中的“启动”开始转发。", "ok");
+        showResult(editing
+          ? "已保存修改。如原来在运行，请重新点击“启动”。"
+          : "已添加配置。点击列表中的“启动”开始转发。", "ok");
+        setEditing("");
         $("form").reset();
       } else {
-        showResult("添加失败：" + (data.error || "未知错误"), "err");
+        showResult((editing ? "保存失败：" : "添加失败：") + (data.error || "未知错误"), "err");
       }
     } catch (err) {
-      showResult("添加失败：" + err.message, "err");
+      showResult((editing ? "保存失败：" : "添加失败：") + err.message, "err");
     } finally {
       busy = false;
       await loadStatus();
@@ -432,6 +483,10 @@
 
   async function runAction(action, id) {
     if (busy) return;
+    if (action === "edit") {
+      beginEdit(id);
+      return;
+    }
     if (action === "delete" && !confirm("确定删除这条转发配置？运行中的会先停止。")) return;
     busy = true;
     showResult("正在" + actionLabels[action] + "…");
@@ -459,6 +514,8 @@
     runAction(btn.dataset.action, btn.dataset.id);
   });
   $("form").addEventListener("submit", addForward);
+  $("cancelBtn").addEventListener("click", exitEditing);
+  $("form").addEventListener("reset", exitEditing);
   $("refresh").addEventListener("click", loadStatus);
 
   loadStatus();

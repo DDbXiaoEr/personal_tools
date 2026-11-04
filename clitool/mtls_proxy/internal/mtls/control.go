@@ -23,17 +23,24 @@ type ControlStatus struct {
 }
 
 type ForwardStatus struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name,omitempty"`
-	Running       bool       `json:"running"`
-	Mode          string     `json:"mode"`
-	Listen        string     `json:"listen"`
-	ActualListen  string     `json:"actual_listen,omitempty"`
-	Target        string     `json:"target"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
-	UptimeSeconds int64      `json:"uptime_seconds,omitempty"`
-	Cert          *CertInfo  `json:"cert,omitempty"`
-	Error         string     `json:"error,omitempty"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name,omitempty"`
+	Running        bool       `json:"running"`
+	Mode           string     `json:"mode"`
+	Listen         string     `json:"listen"`
+	ActualListen   string     `json:"actual_listen,omitempty"`
+	Target         string     `json:"target"`
+	CertPath       string     `json:"cert_path,omitempty"`
+	KeyPath        string     `json:"key_path,omitempty"`
+	CAPath         string     `json:"ca_path,omitempty"`
+	SNI            string     `json:"sni,omitempty"`
+	ALPN           string     `json:"alpn,omitempty"`
+	TimeoutSeconds int        `json:"timeout_seconds,omitempty"`
+	Insecure       bool       `json:"insecure,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	UptimeSeconds  int64      `json:"uptime_seconds,omitempty"`
+	Cert           *CertInfo  `json:"cert,omitempty"`
+	Error          string     `json:"error,omitempty"`
 }
 
 type ForwardRequest struct {
@@ -150,6 +157,24 @@ func (c *Control) Handler() http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "forward": fw})
 	})
+	mux.HandleFunc("PUT /api/forwards/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			writeJSON(w, http.StatusUnsupportedMediaType, map[string]any{"ok": false, "error": "需要 application/json"})
+			return
+		}
+		var req ForwardRequest
+		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20))
+		if err := dec.Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": "请求解析失败: " + err.Error()})
+			return
+		}
+		fw, err := c.Update(r.PathValue("id"), req)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error(), "forward": fw})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "forward": fw})
+	})
 	mux.HandleFunc("POST /api/forwards/{id}/start", func(w http.ResponseWriter, r *http.Request) {
 		fw, err := c.StartForward(r.PathValue("id"))
 		if err != nil {
@@ -204,6 +229,65 @@ func (c *Control) Add(req ForwardRequest) (ForwardStatus, error) {
 		cert:   certInfoOf(cfg),
 	}
 	c.runs[run.id] = run
+	return run.status(time.Now()), nil
+}
+
+func (c *Control) Update(id string, req ForwardRequest) (ForwardStatus, error) {
+	cfg, mode, listen, err := req.toConfig()
+	if err != nil {
+		return ForwardStatus{}, err
+	}
+	if err := validateConfig(cfg); err != nil {
+		return ForwardStatus{}, err
+	}
+
+	c.mu.Lock()
+	run := c.runs[id]
+	if run == nil {
+		c.mu.Unlock()
+		return ForwardStatus{}, fmt.Errorf("未找到转发 %s", id)
+	}
+	if !portZero(listen) {
+		for otherID, other := range c.runs {
+			if otherID == id {
+				continue
+			}
+			if other.listen == listen {
+				c.mu.Unlock()
+				return ForwardStatus{}, fmt.Errorf("监听地址 %s 已被配置 %s 使用", listen, other.label())
+			}
+		}
+	}
+	if req.CertPath == "" && req.CertPEM == "" && len(run.cfg.CertPEM) > 0 {
+		cfg.CertPEM = run.cfg.CertPEM
+		cfg.CertFile = run.cfg.CertFile
+	}
+	if req.KeyPath == "" && req.KeyPEM == "" && len(run.cfg.KeyPEM) > 0 {
+		cfg.KeyPEM = run.cfg.KeyPEM
+		cfg.KeyFile = run.cfg.KeyFile
+	}
+	if req.CAPath == "" && req.CAPEM == "" && len(run.cfg.CAPEM) > 0 {
+		cfg.CAPEM = run.cfg.CAPEM
+		cfg.CAFile = run.cfg.CAFile
+	}
+	wasRunning := run.running
+	c.mu.Unlock()
+
+	if wasRunning {
+		c.stopRun(run)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.runs[id] != run {
+		return ForwardStatus{}, fmt.Errorf("转发 %s 已被删除", id)
+	}
+	run.name = strings.TrimSpace(req.Name)
+	run.mode = mode
+	run.listen = listen
+	run.cfg = cfg
+	run.cert = certInfoOf(cfg)
+	run.err = ""
 	return run.status(time.Now()), nil
 }
 
@@ -367,14 +451,21 @@ func (run *controlRun) label() string {
 
 func (run *controlRun) status(now time.Time) ForwardStatus {
 	st := ForwardStatus{
-		ID:      run.id,
-		Name:    run.name,
-		Running: run.running,
-		Mode:    run.mode,
-		Listen:  run.listen,
-		Target:  run.cfg.Target,
-		Cert:    run.cert,
-		Error:   run.err,
+		ID:             run.id,
+		Name:           run.name,
+		Running:        run.running,
+		Mode:           run.mode,
+		Listen:         run.listen,
+		Target:         run.cfg.Target,
+		CertPath:       run.cfg.CertFile,
+		KeyPath:        run.cfg.KeyFile,
+		CAPath:         run.cfg.CAFile,
+		SNI:            run.cfg.ServerName,
+		ALPN:           strings.Join(run.cfg.ALPN, ","),
+		TimeoutSeconds: int(run.cfg.Timeout / time.Second),
+		Insecure:       run.cfg.Insecure,
+		Cert:           run.cert,
+		Error:          run.err,
 	}
 	if run.running {
 		st.ActualListen = run.actual

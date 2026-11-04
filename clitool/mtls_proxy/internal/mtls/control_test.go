@@ -400,3 +400,148 @@ func freeAddr(t *testing.T) string {
 	ln.Close()
 	return addr
 }
+
+func TestControlUpdate(t *testing.T) {
+	b := mustBundle(t)
+	ctl := NewControl()
+	defer ctl.Close()
+
+	fw, err := ctl.Add(ForwardRequest{
+		Name:           "原配置",
+		Mode:           "http",
+		Listen:         "127.0.0.1:0",
+		Target:         "https://127.0.0.1:1",
+		CertPath:       b.ClientCert,
+		KeyPath:        b.ClientKey,
+		CAPath:         b.CACert,
+		TimeoutSeconds: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr := freeAddr(t)
+	updated, err := ctl.Update(fw.ID, ForwardRequest{
+		Name:           "改过的配置",
+		Mode:           "tcp",
+		Listen:         addr,
+		Target:         "example.com:8443",
+		CertPath:       b.ClientCert,
+		KeyPath:        b.ClientKey,
+		CAPath:         b.CACert,
+		SNI:            "example.com",
+		ALPN:           "h2",
+		TimeoutSeconds: 5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != fw.ID || updated.Name != "改过的配置" || updated.Mode != "tcp" {
+		t.Fatalf("bad update: %+v", updated)
+	}
+	if updated.Listen != addr || updated.Target != "example.com:8443" || updated.SNI != "example.com" || updated.ALPN != "h2" || updated.TimeoutSeconds != 5 {
+		t.Fatalf("fields not updated: %+v", updated)
+	}
+	if list := ctl.Status().Forwards; len(list) != 1 {
+		t.Fatalf("update should not add entry: %+v", list)
+	}
+
+	other, err := ctl.Add(ForwardRequest{
+		Mode:     "http",
+		Listen:   freeAddr(t),
+		Target:   "https://127.0.0.1:1",
+		CertPath: b.ClientCert,
+		KeyPath:  b.ClientKey,
+		CAPath:   b.CACert,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ctl.Update(other.ID, ForwardRequest{
+		Mode:     "http",
+		Listen:   addr,
+		Target:   "https://127.0.0.1:1",
+		CertPath: b.ClientCert,
+		KeyPath:  b.ClientKey,
+		CAPath:   b.CACert,
+	}); err == nil {
+		t.Fatal("update to duplicate listen should fail")
+	}
+}
+
+func TestControlUpdateRunningStops(t *testing.T) {
+	b := mustBundle(t)
+	ctl := NewControl()
+	defer ctl.Close()
+
+	fw, err := ctl.Add(ForwardRequest{
+		Mode:     "http",
+		Listen:   "127.0.0.1:0",
+		Target:   "https://127.0.0.1:1",
+		CertPath: b.ClientCert,
+		KeyPath:  b.ClientKey,
+		CAPath:   b.CACert,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, err := ctl.StartForward(fw.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !started.Running {
+		t.Fatalf("not running: %+v", started)
+	}
+
+	updated, err := ctl.Update(fw.ID, ForwardRequest{
+		Name:     "运行中改名",
+		Mode:     "http",
+		Listen:   started.Listen,
+		Target:   "https://127.0.0.1:2",
+		CertPath: b.ClientCert,
+		KeyPath:  b.ClientKey,
+		CAPath:   b.CACert,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Running {
+		t.Fatalf("update should stop running forward: %+v", updated)
+	}
+	if err := checkHealth(started.ActualListen); err == nil {
+		t.Fatal("old listener should be closed after update")
+	}
+}
+
+func TestControlUpdateKeepsEmbeddedCert(t *testing.T) {
+	b := mustBundle(t)
+	certPEM, _ := os.ReadFile(b.ClientCert)
+	keyPEM, _ := os.ReadFile(b.ClientKey)
+	caPEM, _ := os.ReadFile(b.CACert)
+
+	ctl := NewControl()
+	defer ctl.Close()
+	fw, err := ctl.Add(ForwardRequest{
+		Mode:    "http",
+		Listen:  "127.0.0.1:0",
+		Target:  "https://127.0.0.1:1",
+		CertPEM: string(certPEM),
+		KeyPEM:  string(keyPEM),
+		CAPEM:   string(caPEM),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := ctl.Update(fw.ID, ForwardRequest{
+		Name:   "保留内嵌证书",
+		Mode:   "http",
+		Listen: fw.Listen,
+		Target: "https://127.0.0.1:1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Cert == nil || updated.Cert.Subject == "" {
+		t.Fatalf("embedded cert should be preserved: %+v", updated)
+	}
+}

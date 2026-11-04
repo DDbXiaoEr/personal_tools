@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/filepicker"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -19,6 +22,13 @@ const (
 	modeList uiMode = iota
 	modeForm
 	modeConfirm
+	modeFilePick
+)
+
+const (
+	actionPickCert = "pick-cert"
+	actionPickKey  = "pick-key"
+	actionPickCA   = "pick-ca"
 )
 
 type pendingKind int
@@ -51,6 +61,10 @@ type model struct {
 	pending pendingKind
 	cursor  int
 	form    form
+	editID  string
+
+	filePicker filepicker.Model
+	pickTarget int
 
 	status   string
 	isErr    bool
@@ -68,8 +82,22 @@ func newModel(ctl *mtls.Control) model {
 		width:  100,
 		height: 30,
 	}
+	m.filePicker = newFilePicker()
 	m.refresh()
 	return m
+}
+
+func newFilePicker() filepicker.Model {
+	fp := filepicker.New()
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		fp.CurrentDirectory = home
+	}
+	fp.ShowHidden = true
+	fp.FileAllowed = true
+	fp.DirAllowed = false
+	fp.AutoHeight = false
+	fp.SetHeight(20)
+	return fp
 }
 
 func (m *model) setOK(msg string)  { m.status, m.isErr = msg, false }
@@ -89,6 +117,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		h := m.height - 8
+		if h < 5 {
+			h = 5
+		}
+		m.filePicker.SetHeight(h)
 		return m, nil
 	case tickMsg:
 		m.refresh()
@@ -99,8 +132,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateForm(msg)
 		case modeConfirm:
 			return m.updateConfirm(msg)
+		case modeFilePick:
+			return m.updateFilePick(msg)
 		default:
 			return m.updateList(msg)
+		}
+	default:
+		if m.mode == modeFilePick {
+			return m.updateFilePick(msg)
 		}
 	}
 	return m, nil
@@ -128,7 +167,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a":
 		cmd := m.startAdd()
 		return m, cmd
-	case " ", "enter":
+	case "e", "enter":
+		cmd := m.startEdit()
+		return m, cmd
+	case " ":
 		m.toggleCurrent()
 	case "d", "delete", "backspace":
 		if len(m.forwards) > 0 {
@@ -140,12 +182,25 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if fld := m.form.focused(); fld != nil && fld.kind == kindButton {
+		switch msg.String() {
+		case "enter", " ":
+			return m.activateAction(fld.action)
+		}
+	}
 	switch msg.String() {
 	case "ctrl+c":
 		return m.requestQuit()
 	case "esc":
 		m.mode = modeList
+		m.editID = ""
 		m.status = ""
+		return m, nil
+	case "ctrl+o":
+		if target, ok := pathFieldForPick(m.form.focusedIndex()); ok {
+			return m.openFilePick(target)
+		}
+		m.setErr("请先把光标移到证书/私钥/CA 路径字段")
 		return m, nil
 	case "tab":
 		cmd := m.form.next()
@@ -162,16 +217,129 @@ func (m model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case "ctrl+s":
+		editing := m.editID != ""
+		wasRunning := false
+		if editing {
+			if fw := m.currentForward(); fw != nil {
+				wasRunning = fw.Running
+			}
+		}
 		if err := m.submitForward(); err != nil {
 			m.setErr(err.Error())
 			return m, nil
 		}
+		m.editID = ""
 		m.mode = modeList
-		m.setOK("已添加配置，按空格或 enter 启动")
+		if !editing {
+			m.setOK("已添加配置，按空格启动")
+		} else if wasRunning {
+			m.setOK("已更新配置并停止，按空格重新启动")
+		} else {
+			m.setOK("已更新配置，按空格启动")
+		}
 		return m, nil
 	}
 	cmd := m.form.updateFocused(msg)
 	return m, cmd
+}
+
+func pathFieldForPick(idx int) (int, bool) {
+	switch idx {
+	case fwCert, fwKey, fwCA:
+		return idx, true
+	}
+	return 0, false
+}
+
+func (m model) activateAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case actionPickCert:
+		return m.openFilePick(fwCert)
+	case actionPickKey:
+		return m.openFilePick(fwKey)
+	case actionPickCA:
+		return m.openFilePick(fwCA)
+	}
+	return m, nil
+}
+
+func (m model) openFilePick(target int) (tea.Model, tea.Cmd) {
+	m.pickTarget = target
+	m.mode = modeFilePick
+	m.status = ""
+	m.isErr = false
+	if dir := m.pickStartDir(target); dir != "" {
+		m.filePicker.CurrentDirectory = dir
+	}
+	return m, m.filePicker.Init()
+}
+
+func (m model) pickStartDir(target int) string {
+	if target >= 0 && target < len(m.form.fields) {
+		if v := m.form.fields[target].text(); v != "" {
+			if st, err := os.Stat(v); err == nil {
+				if st.IsDir() {
+					return v
+				}
+				return filepath.Dir(v)
+			}
+			if dir := filepath.Dir(v); dir != "" && dir != "." {
+				if st, err := os.Stat(dir); err == nil && st.IsDir() {
+					return dir
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func (m model) updateFilePick(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		switch keyMsg.String() {
+		case "esc":
+			m.mode = modeForm
+			return m, nil
+		case "ctrl+c":
+			return m.requestQuit()
+		}
+	}
+	var cmd tea.Cmd
+	m.filePicker, cmd = m.filePicker.Update(msg)
+	if didSelect, path := m.filePicker.DidSelectFile(msg); didSelect {
+		m.applyPickedFile(path)
+		m.mode = modeForm
+		if m.pickTarget >= 0 && m.pickTarget < len(m.form.fields) {
+			m.form.focus = m.pickTarget
+		}
+		return m, m.form.applyFocus()
+	}
+	return m, cmd
+}
+
+func (m *model) applyPickedFile(path string) {
+	if m.pickTarget < 0 || m.pickTarget >= len(m.form.fields) {
+		return
+	}
+	m.form.fields[m.pickTarget].setText(path)
+}
+
+func (m model) filePickView() string {
+	header := titleStyle.Render(pickTitle(m.pickTarget))
+	dir := dimStyle.Render(m.filePicker.CurrentDirectory)
+	return header + "\n" + dir + "\n\n" + m.filePicker.View() + "\n" +
+		helpStyle.Render("↑↓ 移动 · enter 进入目录/选择文件 · ←/backspace 上级目录 · esc 取消")
+}
+
+func pickTitle(target int) string {
+	switch target {
+	case fwCert:
+		return "选择客户端证书"
+	case fwKey:
+		return "选择客户端私钥"
+	case fwCA:
+		return "选择 CA 证书"
+	}
+	return "选择证书文件"
 }
 
 func (m model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -202,10 +370,47 @@ func (m model) requestQuit() (tea.Model, tea.Cmd) {
 
 func (m *model) startAdd() tea.Cmd {
 	m.form = forwardForm()
+	m.editID = ""
 	m.mode = modeForm
 	m.status = ""
 	m.isErr = false
 	return m.form.focusFirst()
+}
+
+func (m *model) startEdit() tea.Cmd {
+	fw := m.currentForward()
+	if fw == nil {
+		return nil
+	}
+	m.form = forwardFormFromStatus(*fw)
+	m.editID = fw.ID
+	m.mode = modeForm
+	m.status = ""
+	m.isErr = false
+	return m.form.focusFirst()
+}
+
+func forwardFormFromStatus(fw mtls.ForwardStatus) form {
+	f := forwardForm()
+	f.title = "编辑转发配置: " + forwardName(fw)
+	f.fields[fwName].setText(fw.Name)
+	if fw.Mode == "tcp" {
+		f.fields[fwMode].choice = 1
+	}
+	f.fields[fwListen].setText(fw.Listen)
+	f.fields[fwTarget].setText(fw.Target)
+	f.fields[fwCert].setText(fw.CertPath)
+	f.fields[fwKey].setText(fw.KeyPath)
+	f.fields[fwCA].setText(fw.CAPath)
+	f.fields[fwSNI].setText(fw.SNI)
+	f.fields[fwALPN].setText(fw.ALPN)
+	timeout := fw.TimeoutSeconds
+	if timeout <= 0 {
+		timeout = 10
+	}
+	f.fields[fwTimeout].setText(strconv.Itoa(timeout))
+	f.fields[fwInsecure].boolean = fw.Insecure
+	return f
 }
 
 func forwardForm() form {
@@ -223,7 +428,11 @@ func forwardForm() form {
 	insecure := newBool("跳过校验", false)
 
 	f := form{title: "新增转发配置"}
-	f.add(name, mode, listen, target, cert, key, ca, sni, alpn, timeout, insecure)
+	f.add(name, mode, listen, target, cert, key, ca, sni, alpn, timeout, insecure,
+		newButton("选择证书文件…", actionPickCert),
+		newButton("选择私钥文件…", actionPickKey),
+		newButton("选择 CA 文件…", actionPickCA),
+	)
 	return f
 }
 
@@ -232,7 +441,12 @@ func (m *model) submitForward() error {
 	if err != nil {
 		return err
 	}
-	fw, err := m.ctl.Add(req)
+	var fw mtls.ForwardStatus
+	if m.editID != "" {
+		fw, err = m.ctl.Update(m.editID, req)
+	} else {
+		fw, err = m.ctl.Add(req)
+	}
 	if err != nil {
 		return err
 	}
@@ -387,7 +601,9 @@ func (m model) View() string {
 		}
 		return out
 	case modeConfirm:
-		return m.listView() + "\n\n" + errStyle.Render(m.confirmText()+" (y/n)")
+		return m.listViewWith(errStyle.Render(m.confirmText() + " (y/n)"))
+	case modeFilePick:
+		return m.filePickView()
 	default:
 		return m.listView()
 	}
@@ -407,6 +623,10 @@ func (m model) confirmText() string {
 }
 
 func (m model) listView() string {
+	return m.listViewWith("")
+}
+
+func (m model) listViewWith(extra string) string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("mtlsproxy"))
 	b.WriteString("  ")
@@ -426,12 +646,23 @@ func (m model) listView() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString(helpStyle.Render(m.helpLine()))
-	if m.showHelp {
-		b.WriteString("\n\n")
-		b.WriteString(m.helpView())
+	content := strings.TrimRight(b.String(), "\n")
+	if extra != "" {
+		content += "\n\n" + extra
 	}
-	return b.String()
+	footer := helpStyle.Render(m.helpLine())
+	if m.showHelp {
+		footer += "\n\n" + m.helpView()
+	}
+	return pinBottom(content, footer, m.height)
+}
+
+func pinBottom(content, footer string, height int) string {
+	pad := height - lipgloss.Height(content) - lipgloss.Height(footer)
+	if pad < 0 {
+		pad = 0
+	}
+	return content + "\n" + strings.Repeat("\n", pad) + footer
 }
 
 func (m model) bodyView() string {
@@ -534,16 +765,16 @@ func (m model) listRows() int {
 }
 
 func (m model) helpLine() string {
-	return "a 新增 · space/enter 启停 · d 删除 · r 刷新 · ? 帮助 · q 退出"
+	return "a 新增 · enter/e 编辑 · space 启停 · d 删除 · r 刷新 · ? 帮助 · q 退出"
 }
 
 func (m model) helpView() string {
 	return dimStyle.Render(
 		"提示：\n" +
 			"  · 控制台在内存中维护多条转发，退出后配置清空。\n" +
-			"  · 新增后按空格或 enter 启动；运行中再按一次停止。\n" +
+			"  · 新增后按空格启动；运行中编辑会先停止，保存后需再次按空格启动。\n" +
 			"  · 删除运行中的转发会先停止它。\n" +
-			"  · TUI 只支持填写证书路径；需要上传 PEM 请用 -ui 网页控制台。\n" +
+			"  · 证书/私钥/CA 可聚焦字段按 ctrl+o 或用表单底部按钮选择文件。\n" +
 			"  · HTTP 模式浏览器访问监听地址；TCP 模式客户端连明文端口，gRPC 加 ALPN=h2。\n" +
 			"  · 监听地址冲突会在启动时报错；端口 0 表示随机端口。")
 }

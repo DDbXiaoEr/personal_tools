@@ -68,6 +68,13 @@ func (f *form) focused() *field {
 	return f.fields[f.focus]
 }
 
+func (f *form) focusedIndex() int {
+	if f.focus < 0 || f.focus >= len(f.fields) {
+		return -1
+	}
+	return f.focus
+}
+
 func (f *field) setText(v string) {
 	if f.kind == kindText {
 		f.input.SetValue(v)
@@ -310,6 +317,6 @@ func (f *form) View() string {
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("tab/shift+tab/↑↓ 切换字段 · ←→/空格 切换选项 · enter 触发按钮 · ctrl+s 应用 · esc 取消"))
+	b.WriteString(helpStyle.Render("tab/shift+tab/↑↓ 切换字段 · ←→/空格 切换选项 · ctrl+o 选择证书文件 · enter 触发按钮 · ctrl+s 应用 · esc 取消"))
 	return b.String()
 }
