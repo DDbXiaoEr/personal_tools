@@ -48,14 +48,19 @@ sshman -file ~/.ssh/config
 | Key | Action |
 |-----|--------|
 | `a` | Add one host |
+| `t` | Create a host from a template |
+| `n` | Create a template |
 | `A` | Bulk add (shared User/Port/key + one host per line) |
 | `c` | Clone the current host; alias gets a numeric suffix |
-| `enter` / `e` | Edit |
+| `T` | Save the current host as a template |
+| `enter` / `e` | Edit the selected item (host or template) |
 | `d` | Delete (confirm) |
 | `s` | Save to file |
 | `q` | Quit |
 
 Bulk line format: `alias [hostname [user [port]]]`. A single field is used as both alias and HostName. Shared options apply to every host; per-line User/Port override them.
+
+Templates contain User, Port, and IdentityFile, and live in special comment lines inside the ssh config file (`# sshman-template: <name>\t<User>\t<Port>\t<IdentityFile>`) so ssh ignores them. The main list marks templates with `◆` and hosts with `●`, and templates are viewable/editable directly under the `── 模板 ──` group. `n` creates a template, `T` saves the current host as a template, and `t` creates a host from a template: pick a template, then just fill in HostName (IP or hostname); a blank alias falls back to HostName.
 
 In forms, `tab` moves fields, `ctrl+s` applies to memory, `esc` cancels. Disk write happens only on save.
 

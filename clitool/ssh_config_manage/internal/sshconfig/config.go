@@ -86,8 +86,9 @@ func UniqueHostName(hosts []*Host, base string) string {
 }
 
 type Config struct {
-	Prologue []string
-	Hosts    []*Host
+	Templates []*Template
+	Prologue  []string
+	Hosts     []*Host
 }
 
 func DefaultPath() string {
@@ -115,6 +116,11 @@ func ParseFile(path string) (*Config, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
+
+		if t, ok := ParseTemplateLine(trimmed); ok {
+			cfg.Templates = append(cfg.Templates, t)
+			continue
+		}
 
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			if current == nil {
@@ -150,6 +156,13 @@ func ParseFile(path string) (*Config, error) {
 
 func (c *Config) String() string {
 	var b strings.Builder
+	for _, t := range c.Templates {
+		b.WriteString(t.Line())
+		b.WriteByte('\n')
+	}
+	if len(c.Templates) > 0 && (len(c.Prologue) > 0 || len(c.Hosts) > 0) {
+		b.WriteByte('\n')
+	}
 	for _, line := range c.Prologue {
 		b.WriteString(line)
 		b.WriteByte('\n')

@@ -1,0 +1,15 @@
+package main
+
+import "github.com/charmbracelet/lipgloss"
+
+var (
+	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+	selectedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57"))
+	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	labelStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Width(14)
+	focusedLabel  = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Width(14)
+	helpStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	okStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("76"))
+	catStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+)
