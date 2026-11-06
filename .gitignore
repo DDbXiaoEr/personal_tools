@@ -1,2 +1,7 @@
 bin/
 .DS_Store
+/mcptool/cmd/*/sshtool
+/mcptool/cmd/*/notifytool
+/mcptool/sshtool
+/mcptool/notifytool
+/mcptool/*-linux
