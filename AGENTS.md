@@ -34,28 +34,3 @@ make clean
 
 单个工具在其子目录 `go build` / `go test ./...`。
 
-## 任务完成通知
-
-每次完成用户请求的任务后，在给出最终回复前，调用 `notify` MCP 服务的消息工具发送一次完成通知。
-
-### 钉钉
-
-调用 `send_dingtalk_message`（工具名可能显示为 `notify_send_dingtalk_message`）：
-
-- `content`：`任务完成：<一句话概括本次完成内容>`
-- `at_user_ids`：`"quanxiaoer"`（多个账号用英文逗号分隔，如 `"quanxiaoer,zhangsan"`）
-- `is_at_all`：`false`
-
-### 企业微信
-
-调用 `send_wecom_message`（工具名可能显示为 `notify_send_wecom_message`）：
-
-- `content`：与钉钉相同
-- `mentioned_list`：`"quanxiaoer"`（多个账号用英文逗号分隔）
-
-### 注意事项
-
-- 通知内容保持简洁，只说明完成了什么，不要包含密钥、token、密码等敏感信息。
-- 如果 `notify` 服务未配置对应平台的 key，跳过该平台即可，不要反复重试，也不要因此阻塞任务。
-- 发送通知本身不计为新的任务，不要为通知再次发送通知。
-
