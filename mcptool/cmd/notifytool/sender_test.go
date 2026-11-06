@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +26,7 @@ func TestSendWeCom(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := newSender(2*time.Second, srv.URL, "")
+	s := newSender(2*time.Second, srv.URL, "", "")
 	result, err := s.sendWeCom(context.Background(), "hello", []string{"user1"}, []string{"13800000000"})
 	if err != nil {
 		t.Fatalf("sendWeCom: %v", err)
@@ -54,7 +58,7 @@ func TestSendDingTalkAppendsMentions(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := newSender(2*time.Second, "", srv.URL)
+	s := newSender(2*time.Second, "", srv.URL, "")
 	result, err := s.sendDingTalk(context.Background(), "deploy done", []string{"13800000000"}, []string{"user1"}, false)
 	if err != nil {
 		t.Fatalf("sendDingTalk: %v", err)
@@ -89,10 +93,91 @@ func TestSendWebhookError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	s := newSender(2*time.Second, srv.URL, "")
+	s := newSender(2*time.Second, srv.URL, "", "")
 	_, err := s.sendWeCom(context.Background(), "hello", nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "93000") || !strings.Contains(err.Error(), "invalid token") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSignDingTalkURL(t *testing.T) {
+	now := time.UnixMilli(1700000000000)
+	got, err := signDingTalkURL(dingtalkWebhookBase+"?access_token=tok", "SECtest", now)
+	if err != nil {
+		t.Fatalf("signDingTalkURL: %v", err)
+	}
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	q := u.Query()
+	if q.Get("access_token") != "tok" {
+		t.Errorf("access_token = %q", q.Get("access_token"))
+	}
+	if q.Get("timestamp") != "1700000000000" {
+		t.Errorf("timestamp = %q", q.Get("timestamp"))
+	}
+
+	mac := hmac.New(sha256.New, []byte("SECtest"))
+	mac.Write([]byte("1700000000000\nSECtest"))
+	want := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	if q.Get("sign") != want {
+		t.Errorf("sign = %q, want %q", q.Get("sign"), want)
+	}
+}
+
+func TestSignDingTalkURLWithoutSecret(t *testing.T) {
+	endpoint := dingtalkWebhookBase + "?access_token=tok"
+	got, err := signDingTalkURL(endpoint, "", time.UnixMilli(1700000000000))
+	if err != nil {
+		t.Fatalf("signDingTalkURL: %v", err)
+	}
+	if got != endpoint {
+		t.Fatalf("got = %q, want %q", got, endpoint)
+	}
+}
+
+func TestSendDingTalkSignsRequest(t *testing.T) {
+	var query url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer srv.Close()
+
+	s := newSender(2*time.Second, "", srv.URL+"?access_token=tok&secret=SECtest", "")
+	s.now = func() time.Time { return time.UnixMilli(1700000000000) }
+	if s.dingtalkSecret != "SECtest" {
+		t.Fatalf("secret = %q", s.dingtalkSecret)
+	}
+	if _, err := s.sendDingTalk(context.Background(), "hi", nil, nil, false); err != nil {
+		t.Fatalf("sendDingTalk: %v", err)
+	}
+	if query.Get("timestamp") != "1700000000000" || query.Get("sign") == "" {
+		t.Fatalf("missing signature: %v", query)
+	}
+	if query.Get("secret") != "" {
+		t.Fatalf("secret should be removed from URL: %v", query)
+	}
+	if query.Get("access_token") != "tok" {
+		t.Fatalf("access_token = %q", query.Get("access_token"))
+	}
+}
+
+func TestSplitDingTalkTarget(t *testing.T) {
+	key, secret := splitDingTalkTarget(" tok ", "")
+	if key != "tok" || secret != "" {
+		t.Fatalf("key=%q secret=%q", key, secret)
+	}
+
+	key, secret = splitDingTalkTarget("https://example.com/hook?access_token=tok&secret=SEC", "")
+	if key != "https://example.com/hook?access_token=tok" || secret != "SEC" {
+		t.Fatalf("key=%q secret=%q", key, secret)
+	}
+
+	key, secret = splitDingTalkTarget("https://example.com/hook?access_token=tok&secret=SEC", "EXPLICIT")
+	if key != "https://example.com/hook?access_token=tok" || secret != "EXPLICIT" {
+		t.Fatalf("key=%q secret=%q", key, secret)
 	}
 }
 

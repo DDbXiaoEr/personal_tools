@@ -317,10 +317,12 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 企业微信 / 钉钉群机器人消息 MCP Server。通过 stdio 运行，机器人 key 在启动时由命令行参数提供；发送的文本和要 @ 的账号由 MCP 工具调用传入。
 
 ```bash
-notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人access_token>
+notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人access_token> -dingtalk-secret <钉钉加签secret>
 ```
 
 两个 key 可以只配一个。`-wecom-key` / `-dingtalk-key` 也可以直接填完整 webhook URL。`-timeout` 设置 HTTP 超时，默认 10s。
+
+钉钉机器人开启了「加签」时必须提供 `-dingtalk-secret`（安全设置里的 `SEC...`），工具会自动计算 `timestamp` 和 `sign`；也可以把 `access_token` 和 `secret` 一起放进完整 webhook URL，工具会自动拆分并移除 URL 中的 `secret`。未加签的机器人不需要该参数。
 
 **可用工具：**
 - `send_wecom_message` - 发送文本到企业微信群机器人

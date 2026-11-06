@@ -13,9 +13,10 @@ import (
 )
 
 type config struct {
-	wecomKey    string
-	dingtalkKey string
-	timeout     time.Duration
+	wecomKey       string
+	dingtalkKey    string
+	dingtalkSecret string
+	timeout        time.Duration
 }
 
 var appConfig config
@@ -24,15 +25,17 @@ var defaultSender *sender
 func main() {
 	wecomKey := flag.String("wecom-key", "", "企业微信群机器人 key（也可直接填完整 webhook URL）")
 	dingtalkKey := flag.String("dingtalk-key", "", "钉钉群机器人 access_token（也可直接填完整 webhook URL）")
+	dingtalkSecret := flag.String("dingtalk-secret", "", "钉钉加签机器人的 secret（key 为完整 URL 含 secret 时可省略）")
 	timeout := flag.Duration("timeout", 10*time.Second, "HTTP 请求超时时间")
 	flag.Parse()
 
 	appConfig = config{
-		wecomKey:    strings.TrimSpace(*wecomKey),
-		dingtalkKey: strings.TrimSpace(*dingtalkKey),
-		timeout:     *timeout,
+		wecomKey:       strings.TrimSpace(*wecomKey),
+		dingtalkKey:    strings.TrimSpace(*dingtalkKey),
+		dingtalkSecret: strings.TrimSpace(*dingtalkSecret),
+		timeout:        *timeout,
 	}
-	defaultSender = newSender(appConfig.timeout, appConfig.wecomKey, appConfig.dingtalkKey)
+	defaultSender = newSender(appConfig.timeout, appConfig.wecomKey, appConfig.dingtalkKey, appConfig.dingtalkSecret)
 
 	s := server.NewMCPServer(
 		"notify-mcp",

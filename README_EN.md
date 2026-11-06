@@ -317,10 +317,12 @@ In the form, `tab` / `shift+tab` move between fields, `←→` / space toggle ch
 WeCom / DingTalk group robot message MCP Server. Runs over stdio. Robot keys are provided as command-line flags at startup; the message text and accounts to mention are passed to the MCP tools.
 
 ```bash
-notifytool -wecom-key <wecom robot key> -dingtalk-key <dingtalk access_token>
+notifytool -wecom-key <wecom robot key> -dingtalk-key <dingtalk access_token> -dingtalk-secret <dingtalk sign secret>
 ```
 
 You may configure only one key. `-wecom-key` / `-dingtalk-key` also accept a full webhook URL. `-timeout` sets the HTTP timeout (default 10s).
+
+If the DingTalk robot has "sign" enabled, `-dingtalk-secret` (the `SEC...` value under security settings) is required; the tool computes `timestamp` and `sign` automatically. You can also put `access_token` and `secret` in a full webhook URL; the tool splits them and removes `secret` from the URL. Robots without signing enabled do not need it.
 
 **Available Tools:**
 - `send_wecom_message` - Send text to a WeCom group robot
