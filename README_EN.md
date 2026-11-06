@@ -314,13 +314,28 @@ In the form, `tab` / `shift+tab` move between fields, `←→` / space toggle ch
 
 ### notifytool (MCP Server)
 
-WeCom / DingTalk group robot message MCP Server. Runs over stdio. Robot keys are provided as command-line flags at startup; the message text and accounts to mention are passed to the MCP tools.
+WeCom / DingTalk group robot message MCP Server. Runs over stdio. Robot keys are provided as command-line flags at startup; the message text is passed to the MCP tools. The mention list can be configured as a startup default and/or passed per call — both are merged and deduplicated.
 
 ```bash
-notifytool -wecom-key <wecom robot key> -dingtalk-key <dingtalk access_token> -dingtalk-secret <dingtalk sign secret>
+notifytool -wecom-key <wecom robot key> -dingtalk-key <dingtalk access_token> -dingtalk-secret <dingtalk sign secret> \
+  -dingtalk-at-user-ids <default userids to mention>
 ```
 
 You may configure only one key. `-wecom-key` / `-dingtalk-key` also accept a full webhook URL. `-timeout` sets the HTTP timeout (default 10s).
+
+| Flag | Description |
+|------|-------------|
+| `-wecom-key` | WeCom robot key or full webhook URL |
+| `-dingtalk-key` | DingTalk access_token or full webhook URL |
+| `-dingtalk-secret` | DingTalk sign secret; omit when signing is disabled |
+| `-wecom-mentioned-list` | Default WeCom userids, comma-separated; `@all` mentions everyone |
+| `-wecom-mentioned-mobile-list` | Default WeCom mobile numbers, comma-separated; `@all` mentions everyone |
+| `-dingtalk-at-user-ids` | Default DingTalk userids, comma-separated |
+| `-dingtalk-at-mobiles` | Default DingTalk mobile numbers, comma-separated |
+| `-dingtalk-at-all` | Mention everyone in DingTalk messages by default |
+| `-timeout` | HTTP timeout (default `10s`) |
+
+Startup defaults are merged with the lists passed per call; duplicates are kept once, with startup entries first.
 
 If the DingTalk robot has "sign" enabled, `-dingtalk-secret` (the `SEC...` value under security settings) is required; the tool computes `timestamp` and `sign` automatically. You can also put `access_token` and `secret` in a full webhook URL; the tool splits them and removes `secret` from the URL. Robots without signing enabled do not need it.
 

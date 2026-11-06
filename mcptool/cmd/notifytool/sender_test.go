@@ -203,6 +203,76 @@ func TestRedact(t *testing.T) {
 	}
 }
 
+func TestDingTalkHandlerMergesStartupMentions(t *testing.T) {
+	var got dingtalkPayload
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"errcode":0,"errmsg":"ok"}`))
+	}))
+	defer srv.Close()
+
+	oldConfig, oldSender := appConfig, defaultSender
+	defer func() { appConfig, defaultSender = oldConfig, oldSender }()
+
+	appConfig = config{dingtalkKey: "tok", dingtalkAtUserIDs: []string{"quanxiaoer"}}
+	defaultSender = newSender(2*time.Second, "", srv.URL, "")
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"content": "deploy done", "at_user_ids": "bob"}
+	res, err := dingtalkHandler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("dingtalkHandler: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("handler error: %+v", res)
+	}
+
+	want := []string{"quanxiaoer", "bob"}
+	if len(got.At.AtUserIDs) != len(want) {
+		t.Fatalf("atUserIds = %v, want %v", got.At.AtUserIDs, want)
+	}
+	for i := range want {
+		if got.At.AtUserIDs[i] != want[i] {
+			t.Fatalf("atUserIds = %v, want %v", got.At.AtUserIDs, want)
+		}
+	}
+	if !strings.Contains(got.Text.Content, "@quanxiaoer") || !strings.Contains(got.Text.Content, "@bob") {
+		t.Fatalf("content = %q", got.Text.Content)
+	}
+}
+
+func TestMergeAccounts(t *testing.T) {
+	cases := []struct {
+		name  string
+		base  []string
+		extra []string
+		want  []string
+	}{
+		{"both empty", nil, nil, nil},
+		{"base only", []string{"a", "b"}, nil, []string{"a", "b"}},
+		{"extra only", nil, []string{"c"}, []string{"c"}},
+		{"default first", []string{"a"}, []string{"b"}, []string{"a", "b"}},
+		{"dedupe", []string{"a", "b"}, []string{"b", "c"}, []string{"a", "b", "c"}},
+		{"dedupe ignore case", []string{"Alice"}, []string{"alice", "bob"}, []string{"Alice", "bob"}},
+		{"trim blanks", []string{" a ", ""}, []string{"b"}, []string{"a", "b"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeAccounts(tc.base, tc.extra)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
 func TestAccountList(t *testing.T) {
 	cases := []struct {
 		name string

@@ -314,13 +314,28 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 
 ### notifytool (MCP Server)
 
-企业微信 / 钉钉群机器人消息 MCP Server。通过 stdio 运行，机器人 key 在启动时由命令行参数提供；发送的文本和要 @ 的账号由 MCP 工具调用传入。
+企业微信 / 钉钉群机器人消息 MCP Server。通过 stdio 运行，机器人 key 在启动时由命令行参数提供；发送的文本由 MCP 工具调用传入，@ 名单既可以在启动时配置成默认值，也可以在调用时传入，两者会合并去重。
 
 ```bash
-notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人access_token> -dingtalk-secret <钉钉加签secret>
+notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人access_token> -dingtalk-secret <钉钉加签secret> \
+  -dingtalk-at-user-ids <默认@的userid>
 ```
 
 两个 key 可以只配一个。`-wecom-key` / `-dingtalk-key` 也可以直接填完整 webhook URL。`-timeout` 设置 HTTP 超时，默认 10s。
+
+| 参数 | 说明 |
+|------|------|
+| `-wecom-key` | 企业微信机器人 key 或完整 webhook URL |
+| `-dingtalk-key` | 钉钉机器人 access_token 或完整 webhook URL |
+| `-dingtalk-secret` | 钉钉加签 secret，未加签可省略 |
+| `-wecom-mentioned-list` | 默认 @ 的企业微信 userid，多个用英文逗号分隔；`@all` 表示 @所有人 |
+| `-wecom-mentioned-mobile-list` | 默认 @ 的企业微信手机号，逗号分隔；`@all` 表示 @所有人 |
+| `-dingtalk-at-user-ids` | 默认 @ 的钉钉 userid，逗号分隔 |
+| `-dingtalk-at-mobiles` | 默认 @ 的钉钉手机号，逗号分隔 |
+| `-dingtalk-at-all` | 钉钉消息默认 @所有人 |
+| `-timeout` | HTTP 请求超时，默认 `10s` |
+
+启动参数里的默认名单会和工具调用时传入的名单合并，重复项只保留一次，默认名单排在前面。
 
 钉钉机器人开启了「加签」时必须提供 `-dingtalk-secret`（安全设置里的 `SEC...`），工具会自动计算 `timestamp` 和 `sign`；也可以把 `access_token` 和 `secret` 一起放进完整 webhook URL，工具会自动拆分并移除 URL 中的 `secret`。未加签的机器人不需要该参数。
 
