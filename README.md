@@ -17,7 +17,8 @@ my-tools/
 │   ├── ansible_inventory/# Ansible 清单管理 TUI
 │   └── mtls_proxy/       # mTLS 代理 / 证书验证
 └── mcptool/              # MCP 工具
-    └── cmd/sshtool/      # SSH MCP Server
+    ├── cmd/sshtool/      # SSH MCP Server
+    └── cmd/notifytool/   # 企微 / 钉钉群机器人消息 MCP Server
 ```
 
 ## 工具说明
@@ -310,6 +311,37 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 | `q` / `ctrl+c` | 退出；有运行中的转发时需确认 |
 
 表单内 `tab` / `shift+tab` 切换字段，`←→` / 空格 切换选项或勾选，`ctrl+o` 为当前证书/私钥/CA 字段选择文件（也可用表单底部按钮），`ctrl+s` 添加配置，`esc` 取消。
+
+### notifytool (MCP Server)
+
+企业微信 / 钉钉群机器人消息 MCP Server。通过 stdio 运行，机器人 key 在启动时由命令行参数提供；发送的文本和要 @ 的账号由 MCP 工具调用传入。
+
+```bash
+notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人access_token>
+```
+
+两个 key 可以只配一个。`-wecom-key` / `-dingtalk-key` 也可以直接填完整 webhook URL。`-timeout` 设置 HTTP 超时，默认 10s。
+
+**可用工具：**
+- `send_wecom_message` - 发送文本到企业微信群机器人
+- `send_dingtalk_message` - 发送文本到钉钉群机器人
+
+**send_wecom_message 参数：**
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| content | 是 | 文本内容 |
+| mentioned_list | 否 | 企业微信 userid 数组；传 `@all` 表示 @所有人 |
+| mentioned_mobile_list | 否 | 手机号数组；传 `@all` 表示 @所有人 |
+
+**send_dingtalk_message 参数：**
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| content | 是 | 文本内容 |
+| at_mobiles | 否 | 手机号数组 |
+| at_user_ids | 否 | 钉钉 userid 数组 |
+| is_at_all | 否 | 是否 @所有人（默认 false） |
+
+钉钉文本消息需要内容里带 `@手机号` / `@userid` 才会显示 @，工具会自动把缺失的 @ 追加到文本末尾。成功返回 `{"platform":"wecom","errcode":0,"errmsg":"ok"}`，失败返回错误信息。
 
 ### sshtool (MCP Server)
 

@@ -51,10 +51,11 @@ linux-$(1):
 endef
 
 $(eval $(call mcp,sshtool,./cmd/sshtool/))
+$(eval $(call mcp,notifytool,./cmd/notifytool/))
 
-build-mcptool: build-sshtool
+build-mcptool: build-sshtool build-notifytool
 
-linux-mcptool: linux-sshtool
+linux-mcptool: linux-sshtool linux-notifytool
 
 clean:
 	rm -rf $(BIN_DIR)/*

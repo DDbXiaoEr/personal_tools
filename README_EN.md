@@ -17,7 +17,8 @@ my-tools/
 │   ├── ansible_inventory/# Ansible inventory manager TUI
 │   └── mtls_proxy/       # mTLS proxy / certificate checker
 └── mcptool/              # MCP tools
-    └── cmd/sshtool/      # SSH MCP Server
+    ├── cmd/sshtool/      # SSH MCP Server
+    └── cmd/notifytool/   # WeCom / DingTalk group robot message MCP Server
 ```
 
 ## Tools
@@ -310,6 +311,37 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 | `q` / `ctrl+c` | Quit; asks first when forwards are running |
 
 In the form, `tab` / `shift+tab` move between fields, `←→` / space toggle choices and checkboxes, `ctrl+o` picks a file for the focused cert/key/CA field (or use the buttons at the bottom), `ctrl+s` adds the config, and `esc` cancels.
+
+### notifytool (MCP Server)
+
+WeCom / DingTalk group robot message MCP Server. Runs over stdio. Robot keys are provided as command-line flags at startup; the message text and accounts to mention are passed to the MCP tools.
+
+```bash
+notifytool -wecom-key <wecom robot key> -dingtalk-key <dingtalk access_token>
+```
+
+You may configure only one key. `-wecom-key` / `-dingtalk-key` also accept a full webhook URL. `-timeout` sets the HTTP timeout (default 10s).
+
+**Available Tools:**
+- `send_wecom_message` - Send text to a WeCom group robot
+- `send_dingtalk_message` - Send text to a DingTalk group robot
+
+**send_wecom_message parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| content | Yes | Text content |
+| mentioned_list | No | WeCom userid array; use `@all` to mention everyone |
+| mentioned_mobile_list | No | Mobile number array; use `@all` to mention everyone |
+
+**send_dingtalk_message parameters:**
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| content | Yes | Text content |
+| at_mobiles | No | Mobile number array |
+| at_user_ids | No | DingTalk userid array |
+| is_at_all | No | Mention everyone (default false) |
+
+DingTalk text messages only display mentions when the content contains `@mobile` / `@userid`; the tool appends any missing mentions to the end of the text. Success returns `{"platform":"wecom","errcode":0,"errmsg":"ok"}`; failures return an error message.
 
 ### sshtool (MCP Server)
 

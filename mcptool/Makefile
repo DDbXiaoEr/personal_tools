@@ -1,24 +1,24 @@
 .PHONY: build build-all linux clean run
 
 SSH_BIN := sshtool
-IDP_BIN := idpdbtool
+NOTIFY_BIN := notifytool
 SSH_LINUX_BIN := sshtool-linux
-IDP_LINUX_BIN := idpdbtool-linux
+NOTIFY_LINUX_BIN := notifytool-linux
 SRC_SSH := ./cmd/sshtool/
-SRC_IDP := ./cmd/idpdbtool/
+SRC_NOTIFY := ./cmd/notifytool/
 
 build: build-all
 
 build-all:
 	go build -o $(SSH_BIN) $(SRC_SSH)
-	go build -o $(IDP_BIN) $(SRC_IDP)
+	go build -o $(NOTIFY_BIN) $(SRC_NOTIFY)
 
 linux:
 	GOOS=linux GOARCH=amd64 go build -o $(SSH_LINUX_BIN) $(SRC_SSH)
-	GOOS=linux GOARCH=amd64 go build -o $(IDP_LINUX_BIN) $(SRC_IDP)
+	GOOS=linux GOARCH=amd64 go build -o $(NOTIFY_LINUX_BIN) $(SRC_NOTIFY)
 
 clean:
-	rm -f $(SSH_BIN) $(IDP_BIN) $(SSH_LINUX_BIN) $(IDP_LINUX_BIN)
+	rm -f $(SSH_BIN) $(NOTIFY_BIN) $(SSH_LINUX_BIN) $(NOTIFY_LINUX_BIN)
 
 run: build
 	./$(SSH_BIN)
