@@ -332,15 +332,15 @@ notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人a
 | 参数 | 必填 | 说明 |
 |------|------|------|
 | content | 是 | 文本内容 |
-| mentioned_list | 否 | 企业微信 userid 数组；传 `@all` 表示 @所有人 |
-| mentioned_mobile_list | 否 | 手机号数组；传 `@all` 表示 @所有人 |
+| mentioned_list | 否 | 企业微信 userid，多个用英文逗号分隔；传 `@all` 表示 @所有人 |
+| mentioned_mobile_list | 否 | 手机号，多个用英文逗号分隔；传 `@all` 表示 @所有人 |
 
 **send_dingtalk_message 参数：**
 | 参数 | 必填 | 说明 |
 |------|------|------|
 | content | 是 | 文本内容 |
-| at_mobiles | 否 | 手机号数组 |
-| at_user_ids | 否 | 钉钉 userid 数组 |
+| at_mobiles | 否 | 手机号，多个用英文逗号分隔 |
+| at_user_ids | 否 | 钉钉 userid，多个用英文逗号分隔 |
 | is_at_all | 否 | 是否 @所有人（默认 false） |
 
 钉钉文本消息需要内容里带 `@手机号` / `@userid` 才会显示 @，工具会自动把缺失的 @ 追加到文本末尾。成功返回 `{"platform":"wecom","errcode":0,"errmsg":"ok"}`，失败返回错误信息。

@@ -332,15 +332,15 @@ If the DingTalk robot has "sign" enabled, `-dingtalk-secret` (the `SEC...` value
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | content | Yes | Text content |
-| mentioned_list | No | WeCom userid array; use `@all` to mention everyone |
-| mentioned_mobile_list | No | Mobile number array; use `@all` to mention everyone |
+| mentioned_list | No | WeCom userids, comma-separated; use `@all` to mention everyone |
+| mentioned_mobile_list | No | Mobile numbers, comma-separated; use `@all` to mention everyone |
 
 **send_dingtalk_message parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | content | Yes | Text content |
-| at_mobiles | No | Mobile number array |
-| at_user_ids | No | DingTalk userid array |
+| at_mobiles | No | Mobile numbers, comma-separated |
+| at_user_ids | No | DingTalk userids, comma-separated |
 | is_at_all | No | Mention everyone (default false) |
 
 DingTalk text messages only display mentions when the content contains `@mobile` / `@userid`; the tool appends any missing mentions to the end of the text. Success returns `{"platform":"wecom","errcode":0,"errmsg":"ok"}`; failures return an error message.

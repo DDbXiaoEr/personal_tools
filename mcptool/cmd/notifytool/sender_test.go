@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 func TestSendWeCom(t *testing.T) {
@@ -198,5 +200,33 @@ func TestRedact(t *testing.T) {
 	got := redact("Post https://example.com?key=secret: failed", "secret")
 	if strings.Contains(got, "secret") || !strings.Contains(got, "***") {
 		t.Fatalf("redact = %q", got)
+	}
+}
+
+func TestAccountList(t *testing.T) {
+	cases := []struct {
+		name string
+		arg  any
+		want []string
+	}{
+		{"comma string", "a,b, c", []string{"a", "b", "c"}},
+		{"chinese comma", "a，b；c", []string{"a", "b", "c"}},
+		{"array", []any{"a", "b,c"}, []string{"a", "b", "c"}},
+		{"empty", "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := mcp.CallToolRequest{}
+			req.Params.Arguments = map[string]any{"at_user_ids": tc.arg}
+			got := accountList(req, "at_user_ids")
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+			}
+		})
 	}
 }

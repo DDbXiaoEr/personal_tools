@@ -50,13 +50,11 @@ func main() {
 				mcp.Required(),
 				mcp.Description("要发送的文本内容"),
 			),
-			mcp.WithArray("mentioned_list",
-				mcp.Description("要 @ 的企业微信 userid 列表；传 @all 表示 @所有人"),
-				mcp.WithStringItems(),
+			mcp.WithString("mentioned_list",
+				mcp.Description("要 @ 的企业微信 userid，多个用英文逗号分隔；传 @all 表示 @所有人"),
 			),
-			mcp.WithArray("mentioned_mobile_list",
-				mcp.Description("要 @ 的手机号列表；传 @all 表示 @所有人"),
-				mcp.WithStringItems(),
+			mcp.WithString("mentioned_mobile_list",
+				mcp.Description("要 @ 的手机号，多个用英文逗号分隔；传 @all 表示 @所有人"),
 			),
 		),
 		wecomHandler,
@@ -69,13 +67,11 @@ func main() {
 				mcp.Required(),
 				mcp.Description("要发送的文本内容"),
 			),
-			mcp.WithArray("at_mobiles",
-				mcp.Description("要 @ 的手机号列表"),
-				mcp.WithStringItems(),
+			mcp.WithString("at_mobiles",
+				mcp.Description("要 @ 的手机号，多个用英文逗号分隔"),
 			),
-			mcp.WithArray("at_user_ids",
-				mcp.Description("要 @ 的钉钉 userid 列表"),
-				mcp.WithStringItems(),
+			mcp.WithString("at_user_ids",
+				mcp.Description("要 @ 的钉钉 userid，多个用英文逗号分隔"),
 			),
 			mcp.WithBoolean("is_at_all",
 				mcp.Description("是否 @所有人（默认 false）"),
@@ -101,8 +97,8 @@ func wecomHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallTo
 	result, err := defaultSender.sendWeCom(
 		ctx,
 		content,
-		cleanList(request.GetStringSlice("mentioned_list", nil)),
-		cleanList(request.GetStringSlice("mentioned_mobile_list", nil)),
+		accountList(request, "mentioned_list"),
+		accountList(request, "mentioned_mobile_list"),
 	)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -122,8 +118,8 @@ func dingtalkHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	result, err := defaultSender.sendDingTalk(
 		ctx,
 		content,
-		cleanList(request.GetStringSlice("at_mobiles", nil)),
-		cleanList(request.GetStringSlice("at_user_ids", nil)),
+		accountList(request, "at_mobiles"),
+		accountList(request, "at_user_ids"),
 		request.GetBool("is_at_all", false),
 	)
 	if err != nil {
@@ -135,6 +131,40 @@ func dingtalkHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 func marshalResult(result webhookResult) string {
 	b, _ := json.Marshal(result)
 	return string(b)
+}
+
+// accountList 读取逗号分隔的账号参数，同时兼容数组写法。
+func accountList(request mcp.CallToolRequest, key string) []string {
+	raw, ok := request.GetArguments()[key]
+	if !ok {
+		return nil
+	}
+	var items []string
+	switch v := raw.(type) {
+	case string:
+		items = splitAccounts(v)
+	case []string:
+		for _, s := range v {
+			items = append(items, splitAccounts(s)...)
+		}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				items = append(items, splitAccounts(s)...)
+			}
+		}
+	}
+	return cleanList(items)
+}
+
+func splitAccounts(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool {
+		switch r {
+		case ',', '，', ';', '；':
+			return true
+		}
+		return false
+	})
 }
 
 func cleanList(items []string) []string {

@@ -43,7 +43,7 @@ make clean
 调用 `send_dingtalk_message`（工具名可能显示为 `notify_send_dingtalk_message`）：
 
 - `content`：`任务完成：<一句话概括本次完成内容>`
-- `at_user_ids`：`["1882179537"]`
+- `at_user_ids`：`"quanxiaoer"`（多个账号用英文逗号分隔，如 `"quanxiaoer,zhangsan"`）
 - `is_at_all`：`false`
 
 ### 企业微信
@@ -51,7 +51,7 @@ make clean
 调用 `send_wecom_message`（工具名可能显示为 `notify_send_wecom_message`）：
 
 - `content`：与钉钉相同
-- `mentioned_list`：`["quanxiaoer"]`
+- `mentioned_list`：`"quanxiaoer"`（多个账号用英文逗号分隔）
 
 ### 注意事项
 
