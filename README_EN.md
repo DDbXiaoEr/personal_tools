@@ -333,9 +333,13 @@ You may configure only one key. `-wecom-key` / `-dingtalk-key` also accept a ful
 | `-dingtalk-at-user-ids` | Default DingTalk userids, comma-separated |
 | `-dingtalk-at-mobiles` | Default DingTalk mobile numbers, comma-separated |
 | `-dingtalk-at-all` | Mention everyone in DingTalk messages by default |
+| `-sound` | Play a local notification sound after a successful send by default; the `sound` tool parameter overrides it |
+| `-sound-file` | Default sound file; macOS defaults to `/System/Library/Sounds/Glass.aiff`, Linux uses the system sound |
 | `-timeout` | HTTP timeout (default `10s`) |
 
 Startup defaults are merged with the lists passed per call; duplicates are kept once, with startup entries first.
+
+Sound is off by default: pass `sound: true` per call to play it, and `sound_file` to use your own audio. To make every notification audible, start the server with `-sound` (optionally `-sound-file`). Playback is asynchronous; failures are logged to stderr and never fail the send. Supported platforms: macOS via `afplay`, Linux via `ffplay` or `paplay`; other platforms skip silently.
 
 If the DingTalk robot has "sign" enabled, `-dingtalk-secret` (the `SEC...` value under security settings) is required; the tool computes `timestamp` and `sign` automatically. You can also put `access_token` and `secret` in a full webhook URL; the tool splits them and removes `secret` from the URL. Robots without signing enabled do not need it.
 
@@ -349,6 +353,8 @@ If the DingTalk robot has "sign" enabled, `-dingtalk-secret` (the `SEC...` value
 | content | Yes | Text content |
 | mentioned_list | No | WeCom userids, comma-separated; use `@all` to mention everyone |
 | mentioned_mobile_list | No | Mobile numbers, comma-separated; use `@all` to mention everyone |
+| sound | No | Play a local notification sound; defaults to the `-sound` startup flag |
+| sound_file | No | Sound file path; falls back to `-sound-file` or the system default |
 
 **send_dingtalk_message parameters:**
 | Parameter | Required | Description |
@@ -357,6 +363,8 @@ If the DingTalk robot has "sign" enabled, `-dingtalk-secret` (the `SEC...` value
 | at_mobiles | No | Mobile numbers, comma-separated |
 | at_user_ids | No | DingTalk userids, comma-separated |
 | is_at_all | No | Mention everyone (default false) |
+| sound | No | Play a local notification sound; defaults to the `-sound` startup flag |
+| sound_file | No | Sound file path; falls back to `-sound-file` or the system default |
 
 DingTalk text messages only display mentions when the content contains `@mobile` / `@userid`; the tool appends any missing mentions to the end of the text. Success returns `{"platform":"wecom","errcode":0,"errmsg":"ok"}`; failures return an error message.
 

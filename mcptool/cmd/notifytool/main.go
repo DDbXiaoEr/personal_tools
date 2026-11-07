@@ -24,6 +24,10 @@ type config struct {
 	dingtalkAtUserIDs        []string
 	dingtalkAtMobiles        []string
 	dingtalkAtAll            bool
+
+	// 本机提示音默认值，工具调用时可用 sound / sound_file 覆盖。
+	sound     bool
+	soundFile string
 }
 
 var appConfig config
@@ -38,6 +42,8 @@ func main() {
 	dingtalkAtUserIDs := flag.String("dingtalk-at-user-ids", "", "默认 @ 的钉钉 userid，多个用英文逗号分隔")
 	dingtalkAtMobiles := flag.String("dingtalk-at-mobiles", "", "默认 @ 的手机号（钉钉），多个用英文逗号分隔")
 	dingtalkAtAll := flag.Bool("dingtalk-at-all", false, "钉钉消息默认 @所有人")
+	sound := flag.Bool("sound", false, "发送成功后默认在本机播放提示音（工具调用可用 sound 参数覆盖）")
+	soundFile := flag.String("sound-file", "", "默认提示音文件；macOS 默认 /System/Library/Sounds/Glass.aiff，Linux 用系统自带提示音")
 	timeout := flag.Duration("timeout", 10*time.Second, "HTTP 请求超时时间")
 	flag.Parse()
 
@@ -51,6 +57,8 @@ func main() {
 		dingtalkAtUserIDs:        cleanList(splitAccounts(*dingtalkAtUserIDs)),
 		dingtalkAtMobiles:        cleanList(splitAccounts(*dingtalkAtMobiles)),
 		dingtalkAtAll:            *dingtalkAtAll,
+		sound:                    *sound,
+		soundFile:                strings.TrimSpace(*soundFile),
 	}
 	defaultSender = newSender(appConfig.timeout, appConfig.wecomKey, appConfig.dingtalkKey, appConfig.dingtalkSecret)
 
@@ -73,6 +81,12 @@ func main() {
 			mcp.WithString("mentioned_mobile_list",
 				mcp.Description("要 @ 的手机号，多个用英文逗号分隔；传 @all 表示 @所有人"),
 			),
+			mcp.WithBoolean("sound",
+				mcp.Description("是否在本机播放提示音（默认取服务启动参数 -sound）"),
+			),
+			mcp.WithString("sound_file",
+				mcp.Description("本机提示音文件路径；省略则用 -sound-file 或系统默认提示音"),
+			),
 		),
 		wecomHandler,
 	)
@@ -92,6 +106,12 @@ func main() {
 			),
 			mcp.WithBoolean("is_at_all",
 				mcp.Description("是否 @所有人（默认 false）"),
+			),
+			mcp.WithBoolean("sound",
+				mcp.Description("是否在本机播放提示音（默认取服务启动参数 -sound）"),
+			),
+			mcp.WithString("sound_file",
+				mcp.Description("本机提示音文件路径；省略则用 -sound-file 或系统默认提示音"),
 			),
 		),
 		dingtalkHandler,
@@ -120,6 +140,7 @@ func wecomHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallTo
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	playNotificationSound(requestSound(request))
 	return mcp.NewToolResultText(marshalResult(result)), nil
 }
 
@@ -142,6 +163,7 @@ func dingtalkHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	playNotificationSound(requestSound(request))
 	return mcp.NewToolResultText(marshalResult(result)), nil
 }
 

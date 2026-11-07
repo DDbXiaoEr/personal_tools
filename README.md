@@ -333,9 +333,13 @@ notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人a
 | `-dingtalk-at-user-ids` | 默认 @ 的钉钉 userid，逗号分隔 |
 | `-dingtalk-at-mobiles` | 默认 @ 的钉钉手机号，逗号分隔 |
 | `-dingtalk-at-all` | 钉钉消息默认 @所有人 |
+| `-sound` | 发送成功后默认在本机播放提示音；工具调用可用 `sound` 参数覆盖 |
+| `-sound-file` | 默认提示音文件；macOS 默认 `/System/Library/Sounds/Glass.aiff`，Linux 用系统自带提示音 |
 | `-timeout` | HTTP 请求超时，默认 `10s` |
 
 启动参数里的默认名单会和工具调用时传入的名单合并，重复项只保留一次，默认名单排在前面。
+
+提示音默认关闭：调用时传 `sound: true` 才会在本机响，`sound_file` 可指定自定义音频。想让所有通知都响，启动时加 `-sound`（`-sound-file` 可换音效）。播放是异步的，失败只写 stderr 日志，不影响消息发送结果。平台支持：macOS 用 `afplay`，Linux 用 `ffplay` 或 `paplay`，其它平台静默跳过。
 
 钉钉机器人开启了「加签」时必须提供 `-dingtalk-secret`（安全设置里的 `SEC...`），工具会自动计算 `timestamp` 和 `sign`；也可以把 `access_token` 和 `secret` 一起放进完整 webhook URL，工具会自动拆分并移除 URL 中的 `secret`。未加签的机器人不需要该参数。
 
@@ -349,6 +353,8 @@ notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人a
 | content | 是 | 文本内容 |
 | mentioned_list | 否 | 企业微信 userid，多个用英文逗号分隔；传 `@all` 表示 @所有人 |
 | mentioned_mobile_list | 否 | 手机号，多个用英文逗号分隔；传 `@all` 表示 @所有人 |
+| sound | 否 | 是否在本机播放提示音，默认取启动参数 `-sound` |
+| sound_file | 否 | 本机提示音文件路径，省略则用 `-sound-file` 或系统默认提示音 |
 
 **send_dingtalk_message 参数：**
 | 参数 | 必填 | 说明 |
@@ -357,6 +363,8 @@ notifytool -wecom-key <企业微信机器人key> -dingtalk-key <钉钉机器人a
 | at_mobiles | 否 | 手机号，多个用英文逗号分隔 |
 | at_user_ids | 否 | 钉钉 userid，多个用英文逗号分隔 |
 | is_at_all | 否 | 是否 @所有人（默认 false） |
+| sound | 否 | 是否在本机播放提示音，默认取启动参数 `-sound` |
+| sound_file | 否 | 本机提示音文件路径，省略则用 `-sound-file` 或系统默认提示音 |
 
 钉钉文本消息需要内容里带 `@手机号` / `@userid` 才会显示 @，工具会自动把缺失的 @ 追加到文本末尾。成功返回 `{"platform":"wecom","errcode":0,"errmsg":"ok"}`，失败返回错误信息。
 
