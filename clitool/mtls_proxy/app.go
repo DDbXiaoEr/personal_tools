@@ -89,8 +89,8 @@ func newModel(ctl *mtls.Control) model {
 
 func newFilePicker() filepicker.Model {
 	fp := filepicker.New()
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		fp.CurrentDirectory = home
+	if dir := defaultPickDir(); dir != "" {
+		fp.CurrentDirectory = dir
 	}
 	fp.ShowHidden = true
 	fp.FileAllowed = true
@@ -268,10 +268,25 @@ func (m model) openFilePick(target int) (tea.Model, tea.Cmd) {
 	m.mode = modeFilePick
 	m.status = ""
 	m.isErr = false
-	if dir := m.pickStartDir(target); dir != "" {
+	dir := m.pickStartDir(target)
+	if dir == "" {
+		dir = defaultPickDir()
+	}
+	if dir != "" {
 		m.filePicker.CurrentDirectory = dir
 	}
 	return m, m.filePicker.Init()
+}
+
+// defaultPickDir 返回程序启动时的工作目录，作为文件选择器的默认目录。
+func defaultPickDir() string {
+	if wd, err := os.Getwd(); err == nil && wd != "" {
+		return wd
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return home
+	}
+	return ""
 }
 
 func (m model) pickStartDir(target int) string {
