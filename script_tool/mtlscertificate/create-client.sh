@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
 # 签发 mTLS 客户端证书并导出 PKCS12（有二级 CA 则用二级 CA，否则用根 CA）
-# 用法: ./create-client.sh <CN> [输出目录] [有效天数] [PKCS12密码]
+# 用法: ./create-client.sh <CA名称> <CN> [输出目录] [有效天数] [PKCS12密码]
 
 set -euo pipefail
 
-if [[ $# -lt 1 ]]; then
-    echo "用法: $0 <CN> [输出目录] [有效天数] [PKCS12密码]" >&2
+if [[ $# -lt 2 ]]; then
+    echo "用法: $0 <CA名称> <CN> [输出目录] [有效天数] [PKCS12密码]" >&2
     exit 1
 fi
 
-CN=$1
-OUTPUT_DIR=${2:-./certs}
-DAYS=${3:-3650}
-P12_PASS=${4:-}
+CA_NAME=$1
+CN=$2
+OUTPUT_DIR=${3:-./certs}
+DAYS=${4:-3650}
+P12_PASS=${5:-}
 
-ROOT_DIR="$OUTPUT_DIR/ca"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$SCRIPT_DIR/ca-common.sh"
+
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "未找到 openssl" >&2
+    exit 1
+fi
+
+ROOT_DIR=$(resolve_ca_dir "$OUTPUT_DIR/ca") || exit 1
 ROOT_KEY="$ROOT_DIR/ca.key"
 ROOT_CRT="$ROOT_DIR/ca.crt"
 ROOT_SRL="$ROOT_DIR/ca.srl"
-INT_DIR="$OUTPUT_DIR/intermediate"
-INT_KEY="$INT_DIR/intermediate.key"
-INT_CRT="$INT_DIR/intermediate.crt"
-INT_SRL="$INT_DIR/intermediate.srl"
+INT_DIR=$(resolve_intermediate_dir "$OUTPUT_DIR/intermediate" "$ROOT_CRT" "$(basename "$ROOT_DIR")") || INT_DIR=""
 
 SAFE_CN=$(printf '%s' "$CN" | tr '/:*' '___' | tr -cd 'A-Za-z0-9._-')
 if [[ -z "$SAFE_CN" ]]; then
@@ -35,20 +41,10 @@ CLIENT_CRT="$CLIENT_DIR/client.crt"
 CLIENT_CSR="$CLIENT_DIR/client.csr"
 CLIENT_P12="$CLIENT_DIR/client.p12"
 
-if ! command -v openssl >/dev/null 2>&1; then
-    echo "未找到 openssl" >&2
-    exit 1
-fi
-
-if [[ ! -f "$ROOT_KEY" || ! -f "$ROOT_CRT" ]]; then
-    echo "未找到根 CA，请先运行: ./create-ca.sh $OUTPUT_DIR" >&2
-    exit 1
-fi
-
-if [[ -f "$INT_KEY" && -f "$INT_CRT" ]]; then
-    SIGNER_KEY="$INT_KEY"
-    SIGNER_CRT="$INT_CRT"
-    SIGNER_SRL="$INT_SRL"
+if [[ -n "$INT_DIR" ]]; then
+    SIGNER_KEY="$INT_DIR/intermediate.key"
+    SIGNER_CRT="$INT_DIR/intermediate.crt"
+    SIGNER_SRL="$INT_DIR/intermediate.srl"
     SIGNER_NAME="二级 CA"
 else
     SIGNER_KEY="$ROOT_KEY"
@@ -108,8 +104,8 @@ openssl x509 -req -days "$DAYS" \
     -extfile "$TEMP_CNF" \
     -extensions v3_client
 
-if [[ -f "$INT_CRT" ]]; then
-    cat "$INT_CRT" "$ROOT_CRT" > "$P12_CERTFILE"
+if [[ "$SIGNER_NAME" == "二级 CA" ]]; then
+    cat "$SIGNER_CRT" "$ROOT_CRT" > "$P12_CERTFILE"
 else
     cat "$ROOT_CRT" > "$P12_CERTFILE"
 fi
@@ -129,8 +125,8 @@ echo "证书: $CLIENT_CRT"
 echo "PKCS12: $CLIENT_P12"
 echo ""
 openssl x509 -in "$CLIENT_CRT" -noout -subject -issuer -dates
-if [[ -f "$INT_CRT" ]]; then
-    openssl verify -CAfile "$ROOT_CRT" -untrusted "$INT_CRT" "$CLIENT_CRT"
+if [[ "$SIGNER_NAME" == "二级 CA" ]]; then
+    openssl verify -CAfile "$ROOT_CRT" -untrusted "$SIGNER_CRT" "$CLIENT_CRT"
 else
     openssl verify -CAfile "$ROOT_CRT" "$CLIENT_CRT"
 fi

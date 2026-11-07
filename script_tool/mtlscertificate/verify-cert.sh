@@ -21,25 +21,62 @@ if [[ $# -ge 1 ]]; then
     fi
 fi
 
-ROOT_CRT="$OUTPUT_DIR/ca/ca.crt"
-INT_CRT="$OUTPUT_DIR/intermediate/intermediate.crt"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$SCRIPT_DIR/ca-common.sh"
+
+ROOT_DIR=$(resolve_ca_dir "$OUTPUT_DIR/ca") || {
+    echo "请确认输出目录正确" >&2
+    exit 1
+}
+ROOT_CRT="$ROOT_DIR/ca.crt"
 
 if ! command -v openssl >/dev/null 2>&1; then
     echo "未找到 openssl" >&2
     exit 1
 fi
 
-if [[ ! -f "$ROOT_CRT" ]]; then
-    echo "未找到根 CA: $ROOT_CRT" >&2
-    echo "请确认输出目录正确，或先运行: ./create-ca.sh $OUTPUT_DIR" >&2
-    exit 1
-fi
-
+INT_DIR=$(resolve_intermediate_dir "$OUTPUT_DIR/intermediate" "$ROOT_CRT" "$(basename "$ROOT_DIR")") || INT_DIR=""
 HAS_INT=0
-[[ -f "$INT_CRT" ]] && HAS_INT=1
+INT_CRT=""
+if [[ -n "$INT_DIR" ]]; then
+    INT_CRT="$INT_DIR/intermediate.crt"
+    HAS_INT=1
+fi
 
 PASS=0
 FAIL=0
+
+cert_chains_to() {
+    local crt=$1 root=$2 int=$3
+    if [[ -n "$int" ]]; then
+        openssl verify -no_check_time -CAfile "$root" -untrusted "$int" "$crt" >/dev/null 2>&1
+    else
+        openssl verify -no_check_time -CAfile "$root" "$crt" >/dev/null 2>&1
+    fi
+}
+
+# 判断证书是否属于其他 CA，用于指定 CA_NAME 校验时跳过其他 CA 的证书
+belongs_to_other_ca() {
+    local crt=$1 root int dir
+    local -a roots=()
+
+    for dir in "$OUTPUT_DIR"/ca/*/; do
+        [[ -d "$dir" ]] || continue
+        dir=${dir%/}
+        [[ -f "$dir/ca.crt" ]] && roots+=("$dir/ca.crt")
+    done
+    [[ -f "$OUTPUT_DIR/ca/ca.crt" ]] && roots+=("$OUTPUT_DIR/ca/ca.crt")
+
+    for root in "${roots[@]+"${roots[@]}"}"; do
+        [[ "$root" == "$ROOT_CRT" ]] && continue
+        int=$(resolve_intermediate_dir "$OUTPUT_DIR/intermediate" "$root" "$(basename "$(dirname "$root")")") || int=""
+        [[ -n "$int" ]] && int="$int/intermediate.crt"
+        if cert_chains_to "$crt" "$root" "$int"; then
+            return 0
+        fi
+    done
+    return 1
+}
 
 key_pubkey() {
     openssl pkey -in "$1" -pubout -outform der 2>/dev/null \
@@ -137,10 +174,16 @@ else
         case "$crt" in
             *fullchain.crt) continue ;;
         esac
+        if ! cert_chains_to "$crt" "$ROOT_CRT" "$INT_CRT" && belongs_to_other_ca "$crt"; then
+            continue
+        fi
         verify_one "$crt"
         found=1
     done
     for crt in "$OUTPUT_DIR"/client/*/*.crt; do
+        if ! cert_chains_to "$crt" "$ROOT_CRT" "$INT_CRT" && belongs_to_other_ca "$crt"; then
+            continue
+        fi
         verify_one "$crt"
         found=1
     done

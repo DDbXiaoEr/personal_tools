@@ -1,14 +1,25 @@
 #!/usr/bin/env bash
-# 创建 mTLS 根 CA（私钥 + 自签 CA 证书）
-# 用法: ./create-ca.sh [输出目录] [有效天数] [CN]
+# 创建 mTLS 根 CA（私钥 + 自签 CA 证书），按名称建立目录存放
+# 用法: ./create-ca.sh [CA名称] [输出目录] [有效天数] [CN]
+# 例如: ./create-ca.sh ca1  ->  ./certs/ca/ca1/
 
 set -euo pipefail
 
-OUTPUT_DIR=${1:-./certs}
-DAYS=${2:-3650}
-CN=${3:-My mTLS Root CA}
+NAME=${1:-My mTLS Root CA}
+OUTPUT_DIR=${2:-./certs}
+DAYS=${3:-3650}
+CN=${4:-$NAME}
 
-CA_DIR="$OUTPUT_DIR/ca"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$SCRIPT_DIR/ca-common.sh"
+
+CA_NAME=$(sanitize_ca_name "$NAME")
+if [[ -z "$CA_NAME" ]]; then
+    echo "名称无效，无法生成目录名: $NAME" >&2
+    exit 1
+fi
+
+CA_DIR="$OUTPUT_DIR/ca/$CA_NAME"
 CA_KEY="$CA_DIR/ca.key"
 CA_CRT="$CA_DIR/ca.crt"
 
@@ -59,7 +70,8 @@ openssl req -new -x509 -days "$DAYS" \
     -out "$CA_CRT" \
     -config "$TEMP_CNF"
 
-echo "CA 创建完成"
+echo "CA 创建完成（名称: ${CA_NAME}）"
+echo "CA 目录: $CA_DIR"
 echo "CA 私钥: $CA_KEY"
 echo "CA 证书: $CA_CRT"
 echo ""

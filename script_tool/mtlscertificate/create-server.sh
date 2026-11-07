@@ -1,28 +1,34 @@
 #!/usr/bin/env bash
 # 签发 mTLS 服务端证书（有二级 CA 则用二级 CA，否则用根 CA）
-# 用法: ./create-server.sh <CN> [输出目录] [有效天数] [SAN...]
+# 用法: ./create-server.sh <CA名称> <CN> [输出目录] [有效天数] [SAN...]
 # SAN 未指定时默认: CN、localhost、127.0.0.1、::1
 
 set -euo pipefail
 
-if [[ $# -lt 1 ]]; then
-    echo "用法: $0 <CN> [输出目录] [有效天数] [SAN...]" >&2
+if [[ $# -lt 2 ]]; then
+    echo "用法: $0 <CA名称> <CN> [输出目录] [有效天数] [SAN...]" >&2
     exit 1
 fi
 
-CN=$1
-OUTPUT_DIR=${2:-./certs}
-DAYS=${3:-3650}
-shift $(( $# >= 3 ? 3 : $# ))
+CA_NAME=$1
+CN=$2
+OUTPUT_DIR=${3:-./certs}
+DAYS=${4:-3650}
+shift $(( $# >= 4 ? 4 : $# ))
 
-ROOT_DIR="$OUTPUT_DIR/ca"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$SCRIPT_DIR/ca-common.sh"
+
+if ! command -v openssl >/dev/null 2>&1; then
+    echo "未找到 openssl" >&2
+    exit 1
+fi
+
+ROOT_DIR=$(resolve_ca_dir "$OUTPUT_DIR/ca") || exit 1
 ROOT_KEY="$ROOT_DIR/ca.key"
 ROOT_CRT="$ROOT_DIR/ca.crt"
-INT_DIR="$OUTPUT_DIR/intermediate"
-INT_KEY="$INT_DIR/intermediate.key"
-INT_CRT="$INT_DIR/intermediate.crt"
-INT_SRL="$INT_DIR/intermediate.srl"
 ROOT_SRL="$ROOT_DIR/ca.srl"
+INT_DIR=$(resolve_intermediate_dir "$OUTPUT_DIR/intermediate" "$ROOT_CRT" "$(basename "$ROOT_DIR")") || INT_DIR=""
 
 SAFE_CN=$(printf '%s' "$CN" | tr '/:*' '___' | tr -cd 'A-Za-z0-9._-')
 if [[ -z "$SAFE_CN" ]]; then
@@ -36,20 +42,10 @@ SERVER_CRT="$SERVER_DIR/server.crt"
 SERVER_CSR="$SERVER_DIR/server.csr"
 FULLCHAIN="$SERVER_DIR/fullchain.crt"
 
-if ! command -v openssl >/dev/null 2>&1; then
-    echo "未找到 openssl" >&2
-    exit 1
-fi
-
-if [[ ! -f "$ROOT_KEY" || ! -f "$ROOT_CRT" ]]; then
-    echo "未找到根 CA，请先运行: ./create-ca.sh $OUTPUT_DIR" >&2
-    exit 1
-fi
-
-if [[ -f "$INT_KEY" && -f "$INT_CRT" ]]; then
-    SIGNER_KEY="$INT_KEY"
-    SIGNER_CRT="$INT_CRT"
-    SIGNER_SRL="$INT_SRL"
+if [[ -n "$INT_DIR" ]]; then
+    SIGNER_KEY="$INT_DIR/intermediate.key"
+    SIGNER_CRT="$INT_DIR/intermediate.crt"
+    SIGNER_SRL="$INT_DIR/intermediate.srl"
     SIGNER_NAME="二级 CA"
 else
     SIGNER_KEY="$ROOT_KEY"
@@ -152,8 +148,8 @@ openssl x509 -req -days "$DAYS" \
     -extfile "$TEMP_CNF" \
     -extensions v3_server
 
-if [[ -f "$INT_CRT" ]]; then
-    cat "$SERVER_CRT" "$INT_CRT" "$ROOT_CRT" > "$FULLCHAIN"
+if [[ "$SIGNER_NAME" == "二级 CA" ]]; then
+    cat "$SERVER_CRT" "$SIGNER_CRT" "$ROOT_CRT" > "$FULLCHAIN"
 else
     cat "$SERVER_CRT" "$ROOT_CRT" > "$FULLCHAIN"
 fi
@@ -164,8 +160,8 @@ echo "证书: $SERVER_CRT"
 echo "证书链: $FULLCHAIN"
 echo ""
 openssl x509 -in "$SERVER_CRT" -noout -subject -issuer -dates
-if [[ -f "$INT_CRT" ]]; then
-    openssl verify -CAfile "$ROOT_CRT" -untrusted "$INT_CRT" "$SERVER_CRT"
+if [[ "$SIGNER_NAME" == "二级 CA" ]]; then
+    openssl verify -CAfile "$ROOT_CRT" -untrusted "$SIGNER_CRT" "$SERVER_CRT"
 else
     openssl verify -CAfile "$ROOT_CRT" "$SERVER_CRT"
 fi

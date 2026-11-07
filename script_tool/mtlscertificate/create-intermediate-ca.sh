@@ -1,19 +1,30 @@
 #!/usr/bin/env bash
-# 用根 CA 签发二级（中间）CA
-# 用法: ./create-intermediate-ca.sh [输出目录] [有效天数] [CN]
+# 用根 CA 签发二级（中间）CA，按 CA 名称分目录存放
+# 用法: ./create-intermediate-ca.sh [CA名称] [输出目录] [有效天数] [CN]
+# 例如: ./create-intermediate-ca.sh ca1  ->  ./certs/intermediate/ca1/
 
 set -euo pipefail
 
-OUTPUT_DIR=${1:-./certs}
-DAYS=${2:-3650}
-CN=${3:-My mTLS Intermediate CA}
+CA_NAME=${1:-${CA_NAME:-}}
+OUTPUT_DIR=${2:-./certs}
+DAYS=${3:-3650}
+CN=${4:-My mTLS Intermediate CA}
 
-ROOT_DIR="$OUTPUT_DIR/ca"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+source "$SCRIPT_DIR/ca-common.sh"
+
+ROOT_DIR=$(resolve_ca_dir "$OUTPUT_DIR/ca") || exit 1
 ROOT_KEY="$ROOT_DIR/ca.key"
 ROOT_CRT="$ROOT_DIR/ca.crt"
 ROOT_SRL="$ROOT_DIR/ca.srl"
 
-INT_DIR="$OUTPUT_DIR/intermediate"
+CA_DIR_NAME=$(basename "$ROOT_DIR")
+if [[ "$ROOT_DIR" == "$OUTPUT_DIR/ca" ]]; then
+    # 兼容旧版根 CA 布局，二级 CA 继续放在 intermediate/ 下
+    INT_DIR="$OUTPUT_DIR/intermediate"
+else
+    INT_DIR="$OUTPUT_DIR/intermediate/$CA_DIR_NAME"
+fi
 INT_KEY="$INT_DIR/intermediate.key"
 INT_CRT="$INT_DIR/intermediate.crt"
 INT_CSR="$INT_DIR/intermediate.csr"
@@ -21,11 +32,6 @@ INT_CHAIN="$INT_DIR/chain.crt"
 
 if ! command -v openssl >/dev/null 2>&1; then
     echo "未找到 openssl" >&2
-    exit 1
-fi
-
-if [[ ! -f "$ROOT_KEY" || ! -f "$ROOT_CRT" ]]; then
-    echo "未找到根 CA，请先运行: ./create-ca.sh $OUTPUT_DIR" >&2
     exit 1
 fi
 
@@ -79,7 +85,8 @@ openssl x509 -req -days "$DAYS" \
 
 cat "$INT_CRT" "$ROOT_CRT" > "$INT_CHAIN"
 
-echo "二级 CA 创建完成"
+echo "二级 CA 创建完成（根 CA: ${CA_DIR_NAME}）"
+echo "目录: $INT_DIR"
 echo "私钥: $INT_KEY"
 echo "证书: $INT_CRT"
 echo "证书链: $INT_CHAIN"
