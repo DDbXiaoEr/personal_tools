@@ -67,7 +67,7 @@ In forms, `tab` moves fields, `ctrl+s` applies to memory, `esc` cancels. Disk wr
 
 ### viewcsv_xlsx
 
-CSV / XLSX file viewer that displays content in table format with custom delimiter support, Chinese character alignment, and multi-sheet Excel files. Multiple files open fullscreen; `tab` / `shift+tab` switch files. A single file or piped (non-TTY) output still prints the table.
+CSV / XLSX file viewer that displays content in table format with custom delimiter support, Chinese character alignment, and multi-sheet Excel files. Multiple files open fullscreen; `tab` / `shift+tab` switch files. A single file or piped (non-TTY) output still prints the table; add `--tui` to open a single file fullscreen and use search. In fullscreen, press `/` to filter the current sheet by keyword in real time, with matches highlighted.
 
 ```bash
 # Usage (format auto-detected by extension)
@@ -76,6 +76,9 @@ viewcsv_xlsx input.xlsx
 
 # Read all CSV files in the current directory
 viewcsv_xlsx *.csv
+
+# Fullscreen even for a single file (enables search)
+viewcsv_xlsx --tui input.csv
 
 # Custom delimiter
 viewcsv_xlsx -d "	" input.tsv
@@ -95,6 +98,9 @@ viewcsv_xlsx --no-header input.csv
 | `tab` / `shift+tab` | Switch file |
 | `[` / `]` | Switch sheet |
 | `↑` `↓` `←` `→` / `j` `k` | Scroll |
+| `/` | Search current sheet (any cell, case-insensitive) |
+| `enter` | Confirm filter |
+| `esc` | Cancel / clear search |
 | `q` | Quit |
 
 ### shellman

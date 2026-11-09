@@ -67,7 +67,7 @@ sshman -file ~/.ssh/config
 
 ### viewcsv_xlsx
 
-CSV / XLSX 文件查看工具，以表格形式展示内容，支持自定义分隔符、中文对齐，以及多 Sheet 的 Excel 文件。打开多个文件时进入全屏，用 `tab` / `shift+tab` 切换；单个文件或管道输出仍打印表格。
+CSV / XLSX 文件查看工具，以表格形式展示内容，支持自定义分隔符、中文对齐，以及多 Sheet 的 Excel 文件。打开多个文件时进入全屏，用 `tab` / `shift+tab` 切换；单个文件或管道输出仍打印表格，加 `--tui` 可对单个文件进入全屏并使用搜索。全屏模式下按 `/` 按关键字实时筛选当前工作表，匹配内容高亮显示。
 
 ```bash
 # 使用（按扩展名自动识别 CSV / XLSX）
@@ -76,6 +76,9 @@ viewcsv_xlsx input.xlsx
 
 # 读取当前目录所有 CSV
 viewcsv_xlsx *.csv
+
+# 单文件也进入全屏（支持搜索）
+viewcsv_xlsx --tui input.csv
 
 # 指定分隔符
 viewcsv_xlsx -d "	" input.tsv
@@ -95,6 +98,9 @@ viewcsv_xlsx --no-header input.csv
 | `tab` / `shift+tab` | 切换文件 |
 | `[` / `]` | 切换工作表 |
 | `↑` `↓` `←` `→` / `j` `k` | 滚动 |
+| `/` | 搜索当前工作表（任意单元格，忽略大小写） |
+| `enter` | 确认筛选结果 |
+| `esc` | 取消/清除搜索 |
 | `q` | 退出 |
 
 ### shellman

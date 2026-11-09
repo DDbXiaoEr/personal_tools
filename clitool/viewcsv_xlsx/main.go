@@ -15,11 +15,12 @@ func main() {
 	delimiter := flag.String("d", ",", "分隔符（仅 CSV）")
 	noHeader := flag.Bool("no-header", false, "第一行当数据，不当表头")
 	sheet := flag.String("sheet", "", "工作表名称或从 1 开始的序号（仅 XLSX，默认全部）")
+	tui := flag.Bool("tui", false, "单文件也进入全屏交互模式（支持搜索）")
 	flag.Parse()
 
 	patterns := flag.Args()
 	if len(patterns) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: viewcsv_xlsx file.csv|file.xlsx [file ...] [-d delimiter] [--no-header] [--sheet name]")
+		fmt.Fprintln(os.Stderr, "usage: viewcsv_xlsx file.csv|file.xlsx [file ...] [-d delimiter] [--no-header] [--sheet name] [--tui]")
 		fmt.Fprintln(os.Stderr, "       viewcsv_xlsx *.xlsx")
 		os.Exit(1)
 	}
@@ -40,7 +41,7 @@ func main() {
 		files = append(files, f)
 	}
 
-	if len(files) < 2 || !term.IsTerminal(int(os.Stdout.Fd())) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) || (len(files) < 2 && !*tui) {
 		printFiles(files, *noHeader)
 		return
 	}
