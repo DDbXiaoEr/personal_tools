@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
 import type { RGBA } from "@opentui/core"
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
@@ -212,6 +213,88 @@ function colorsOf(theme: Ctx["theme"]): Colors {
     warning: theme.text.feedback.warning.base,
     error: theme.text.feedback.error.base,
   }
+}
+
+type Balance = {
+  amount: number
+  currency: string
+}
+
+let balanceCache: (Balance & { at: number }) | null = null
+
+function isDeepseekProvider(providerID: string) {
+  const id = providerID.trim().toLowerCase()
+  return id === "deepseek" || id.startsWith("deepseek-") || id.startsWith("deepseek_")
+}
+
+async function deepseekKey() {
+  const env = process.env.DEEPSEEK_API_KEY?.trim()
+  if (env) return env
+  try {
+    const auth = JSON.parse(await readFile(join(homedir(), ".local/share/opencode/auth.json"), "utf8")) as Record<
+      string,
+      { key?: string }
+    >
+    for (const [id, entry] of Object.entries(auth || {})) {
+      if (!id.toLowerCase().includes("deepseek")) continue
+      const key = entry?.key?.trim()
+      if (key) return key
+    }
+  } catch {
+    // No auth file or invalid JSON: try the account store next.
+  }
+  try {
+    const account = JSON.parse(await readFile(join(homedir(), ".local/share/opencode/account.json"), "utf8")) as {
+      accounts?: Record<string, { serviceID?: string; credential?: { key?: string } }>
+    }
+    for (const entry of Object.values(account.accounts || {})) {
+      if (!entry?.serviceID?.toLowerCase().includes("deepseek")) continue
+      const key = entry.credential?.key?.trim()
+      if (key) return key
+    }
+  } catch {
+    // No account store: the balance simply stays hidden.
+  }
+  return null
+}
+
+async function fetchBalance(): Promise<Balance | null> {
+  const key = await deepseekKey()
+  if (!key) return null
+  try {
+    const res = await fetch("https://api.deepseek.com/user/balance", {
+      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as {
+      balance_infos?: Array<{ currency?: string; total_balance?: string }>
+    }
+    const info = data.balance_infos?.[0]
+    const amount = Number(info?.total_balance)
+    if (!info || !Number.isFinite(amount)) return null
+    return { amount, currency: String(info.currency || "CNY") }
+  } catch {
+    return null
+  }
+}
+
+function currencySymbol(currency: string) {
+  if (currency === "CNY") return "¥"
+  if (currency === "USD") return "$"
+  return `${currency} `
+}
+
+function fullAmount(currency: string) {
+  const configured = Number(process.env.DEEPSEEK_BALANCE_FULL)
+  if (Number.isFinite(configured) && configured > 0) return configured
+  return currency === "USD" ? 150 : 1000
+}
+
+function battery(ratio: number, width = 10) {
+  const clamped = Math.min(1, Math.max(0, ratio))
+  const filled = clamped <= 0 ? 0 : Math.max(1, Math.round(clamped * width))
+  return `[${"█".repeat(filled)}${"░".repeat(width - filled)}]▌`
 }
 
 function contentChars(message: Assistant) {
@@ -470,6 +553,67 @@ const tui = Plugin.define({
         version()
         return colorsOf(ctx.theme)
       })
+      const provider = createMemo(() => {
+        version()
+        const list = ctx.data.session.message.list(props.sessionID) as any[]
+        for (let i = list.length - 1; i >= 0; i--) {
+          const m = list[i]
+          const kind = m?.type ?? m?.role
+          if (kind === "assistant") return String(m.providerID ?? m.model?.providerID ?? "")
+          if (kind === "user" && m?.model) return String(m.model.providerID ?? m.providerID ?? "")
+        }
+        return ""
+      })
+      const [balance, setBalance] = createSignal<Balance | null>(balanceCache)
+      const [balanceLoading, setBalanceLoading] = createSignal(!balanceCache)
+      createEffect(
+        on(
+          () => isDeepseekProvider(provider()),
+          (active) => {
+            if (!active) return
+            let disposed = false
+            const load = async (force: boolean) => {
+              const cached = balanceCache
+              if (!force && cached && Date.now() - cached.at < 60_000) {
+                setBalance(cached)
+                setBalanceLoading(false)
+                return
+              }
+              if (!cached) setBalanceLoading(true)
+              const next = await fetchBalance()
+              if (disposed) return
+              if (next) {
+                balanceCache = { ...next, at: Date.now() }
+                setBalance(next)
+              }
+              setBalanceLoading(false)
+            }
+            void load(false)
+            const timer = setInterval(() => void load(true), 60_000)
+            onCleanup(() => {
+              disposed = true
+              clearInterval(timer)
+            })
+          },
+        ),
+      )
+      const balanceRatio = () => {
+        const value = balance()
+        return value ? value.amount / fullAmount(value.currency) : 0
+      }
+      const balanceColor = () => {
+        const value = balance()
+        if (!value) return colors().muted
+        const usd = value.currency === "USD"
+        if (value.amount <= (usd ? 3 : 20)) return colors().error
+        if (value.amount <= (usd ? 15 : 100)) return colors().warning
+        return colors().success
+      }
+      const balanceLabel = () => {
+        const value = balance()
+        if (!value) return balanceLoading() ? "···" : "--"
+        return `${currencySymbol(value.currency)}${value.amount.toFixed(2)}`
+      }
       const stats = createMemo(() => {
         version()
         return speedOf(props.sessionID, Date.now())
@@ -488,6 +632,13 @@ const tui = Plugin.define({
 
       return (
         <box>
+          <Show when={isDeepseekProvider(provider())}>
+            <text>
+              <span fg={colors().muted}>BAL </span>
+              <span fg={balanceColor()}>{battery(balanceRatio())}</span>
+              <span fg={balance() ? colors().text : colors().muted}> {balanceLabel()}</span>
+            </text>
+          </Show>
           <text>
             <span fg={colors().primary}>◆ TOKEN</span>
             <span fg={colors().muted}>  </span>
