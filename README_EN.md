@@ -2,7 +2,7 @@
 
 [中文](README.md)
 
-A collection of personal CLI and MCP tools for daily development and operations. Designed to improve efficiency and automate repetitive tasks.
+A collection of personal CLI and MCP tools for daily development and operations. Built to fit my own habits and make things more convenient to operate — not intended to boost productivity.
 
 ## Project Structure
 
