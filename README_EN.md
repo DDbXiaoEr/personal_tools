@@ -310,13 +310,16 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 | `↑` `k` / `↓` `j` | Move cursor |
 | `g` / `home`, `G` / `end` | Jump to first / last |
 | `a` | Add a forward (opens form) |
-| `space` / `enter` | Start or stop the selected forward |
+| `enter` / `e` | Edit the selected forward |
+| `space` | Start or stop the selected forward |
 | `d` / `delete` | Delete the selected forward (stops it first), with confirmation |
 | `r` | Refresh status |
 | `?` | Toggle help |
 | `q` / `ctrl+c` | Quit; asks first when forwards are running |
 
 In the form, `tab` / `shift+tab` move between fields, `←→` / space toggle choices and checkboxes, `ctrl+o` picks a file for the focused cert/key/CA field (or use the buttons at the bottom), `ctrl+s` adds the config, and `esc` cancels.
+
+TUI run logs go to `mtlsproxy/mtlsproxy.log` in the system cache directory (`~/Library/Caches/mtlsproxy/` on macOS, `~/.cache/mtlsproxy/` on Linux) instead of the terminal, so they never scramble the screen; the file is cleared on the next start once it exceeds 5MB.
 
 ### notifytool (MCP Server)
 

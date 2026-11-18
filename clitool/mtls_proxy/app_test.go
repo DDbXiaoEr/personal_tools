@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"mtlsproxy/internal/mtls"
 )
@@ -272,4 +273,57 @@ func TestHelpLinePinnedToBottom(t *testing.T) {
 	if !strings.Contains(out, "提示：") {
 		t.Fatalf("expanded help missing: %s", out)
 	}
+}
+
+func TestViewFitsTerminal(t *testing.T) {
+	ctl := mtls.NewControl()
+	defer ctl.Close()
+	m := newModel(ctl)
+	m.width, m.height = 80, 24
+
+	m.form = forwardForm()
+	m.form.fields[fwName].setText("vault-very-long-name-for-layout")
+	m.form.fields[fwListen].setText("127.0.0.1:0")
+	m.form.fields[fwTarget].setText("https://vault.example.com:8200/some/really/long/path/for/layout")
+	if err := m.submitForward(); err != nil {
+		t.Fatal(err)
+	}
+	m.form = forwardForm()
+	m.form.fields[fwName].setText("second")
+	m.form.fields[fwListen].setText("127.0.0.1:0")
+	m.form.fields[fwTarget].setText("https://second.example.com:8200")
+	if err := m.submitForward(); err != nil {
+		t.Fatal(err)
+	}
+	m.cursor = 1
+	m.setOK("已停止 vault-very-long-name-for-layout")
+
+	check := func(name, out string) {
+		t.Helper()
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if len(lines) > m.height {
+			t.Fatalf("%s: %d lines > height %d:\n%s", name, len(lines), m.height, out)
+		}
+		for _, line := range lines {
+			if w := lipgloss.Width(line); w > m.width {
+				t.Fatalf("%s: line width %d > %d: %q", name, w, m.width, line)
+			}
+		}
+	}
+
+	check("list", m.View())
+	m.showHelp = true
+	check("list-help", m.View())
+	m.showHelp = false
+
+	m.form = forwardForm()
+	m.mode = modeForm
+	check("form", m.View())
+	m.setErr("监听地址不能为空")
+	check("form-status", m.View())
+
+	m.mode = modeConfirm
+	m.pending = pendingDelete
+	m.status = ""
+	check("confirm", m.View())
 }

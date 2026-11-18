@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type fieldKind int
@@ -265,17 +266,30 @@ func (f *form) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(f.title))
 	b.WriteString("\n\n")
-	for i, fld := range f.fields {
+	for i := 0; i < len(f.fields); i++ {
+		fld := f.fields[i]
 		if fld.hidden {
 			continue
 		}
 		if fld.kind == kindButton {
-			style := buttonStyle
-			if i == f.focus {
-				style = buttonFocusedStyle
+			var parts []string
+			for ; i < len(f.fields) && f.fields[i].kind == kindButton; i++ {
+				btn := f.fields[i]
+				if btn.hidden {
+					continue
+				}
+				style := buttonStyle
+				if i == f.focus {
+					style = buttonFocusedStyle
+				}
+				if len(parts) > 0 {
+					parts = append(parts, " ")
+				}
+				parts = append(parts, style.Render("▸ "+btn.label))
 			}
+			i--
 			b.WriteString("  ")
-			b.WriteString(style.Render("▸ " + fld.label))
+			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, parts...))
 			b.WriteString("\n")
 			continue
 		}
@@ -317,6 +331,6 @@ func (f *form) View() string {
 		}
 	}
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("tab/shift+tab/↑↓ 切换字段 · ←→/空格 切换选项 · ctrl+o 选择证书文件 · enter 触发按钮 · ctrl+s 应用 · esc 取消"))
+	b.WriteString(helpStyle.Render("tab/↑↓ 切换字段 · ←→/空格 切换选项 · ctrl+o 选文件 · ctrl+s 应用 · esc 取消"))
 	return b.String()
 }

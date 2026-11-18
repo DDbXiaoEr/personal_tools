@@ -4,8 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -110,6 +113,8 @@ func main() {
 }
 
 func runTUI() {
+	closeLog := redirectTUIlog()
+	defer closeLog()
 	ctl := mtls.NewControl()
 	defer ctl.Close()
 	p := tea.NewProgram(newModel(ctl), tea.WithAltScreen())
@@ -117,6 +122,29 @@ func runTUI() {
 		fmt.Fprintf(os.Stderr, "运行失败: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// redirectTUIlog 把 log 输出写到文件：直接打到 stderr 会顶动 alt screen，把界面冲乱。
+func redirectTUIlog() func() {
+	path := mtls.DefaultLogPath()
+	if path == "" {
+		log.SetOutput(io.Discard)
+		return func() {}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		log.SetOutput(io.Discard)
+		return func() {}
+	}
+	if st, err := os.Stat(path); err == nil && st.Size() > 5<<20 {
+		_ = os.Truncate(path, 0)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.SetOutput(io.Discard)
+		return func() {}
+	}
+	log.SetOutput(f)
+	return func() { _ = f.Close() }
 }
 
 func printOut(v any, text string, jsonOut bool) {
@@ -158,6 +186,7 @@ func usage(msg string) {
   mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 
 -tui 启动终端控制台，按 a 添加多条转发配置，enter/e 编辑，空格启停，d 删除。
+     运行日志写入缓存目录 mtlsproxy/mtlsproxy.log，不打印到界面。
 -ui 启动网页控制台，可添加多条转发配置，分别编辑、启动、停止和删除。
 -listen 默认 HTTP 反向代理：浏览器访问监听地址即可打开目标页面。
 -tcp 为字节流隧道，适用于 gRPC / 裸 TCP；客户端连明文端口，工具用证书做 mTLS。

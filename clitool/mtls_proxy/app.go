@@ -614,14 +614,26 @@ func (m model) View() string {
 				out += "\n" + okStyle.Render(m.status)
 			}
 		}
-		return out
+		return fitHeight(out, m.height)
 	case modeConfirm:
 		return m.listViewWith(errStyle.Render(m.confirmText() + " (y/n)"))
 	case modeFilePick:
-		return m.filePickView()
+		return fitHeight(m.filePickView(), m.height)
 	default:
 		return m.listView()
 	}
+}
+
+// fitHeight 防止内容比终端高：超高的行会被 bubbletea 从顶部截掉，界面看起来像被顶乱。
+func fitHeight(s string, height int) string {
+	if height <= 0 {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) <= height {
+		return s
+	}
+	return strings.Join(lines[:height], "\n")
 }
 
 func (m model) confirmText() string {
@@ -669,7 +681,7 @@ func (m model) listViewWith(extra string) string {
 	if m.showHelp {
 		footer += "\n\n" + m.helpView()
 	}
-	return pinBottom(content, footer, m.height)
+	return fitHeight(pinBottom(content, footer, m.height), m.height)
 }
 
 func pinBottom(content, footer string, height int) string {
@@ -736,9 +748,9 @@ func (m model) bodyView() string {
 }
 
 func (m model) columnRest(nameWidth int) int {
-	w := m.width - nameWidth - 8
-	if w < 16 {
-		return 16
+	w := m.width - nameWidth - 10
+	if w < 12 {
+		return 12
 	}
 	return w
 }
@@ -784,14 +796,22 @@ func (m model) helpLine() string {
 }
 
 func (m model) helpView() string {
-	return dimStyle.Render(
-		"提示：\n" +
-			"  · 控制台在内存中维护多条转发，退出后配置清空。\n" +
-			"  · 新增后按空格启动；运行中编辑会先停止，保存后需再次按空格启动。\n" +
-			"  · 删除运行中的转发会先停止它。\n" +
-			"  · 证书/私钥/CA 可聚焦字段按 ctrl+o 或用表单底部按钮选择文件。\n" +
-			"  · HTTP 模式浏览器访问监听地址；TCP 模式客户端连明文端口，gRPC 加 ALPN=h2。\n" +
-			"  · 监听地址冲突会在启动时报错；端口 0 表示随机端口。")
+	lines := []string{
+		"提示：",
+		"  · 控制台在内存中维护多条转发，退出后配置清空。",
+		"  · 新增后按空格启动；运行中编辑会先停止，保存后需再次按空格启动。",
+		"  · 删除运行中的转发会先停止它。",
+		"  · 证书/私钥/CA 可聚焦字段按 ctrl+o 或用表单底部按钮选择文件。",
+		"  · HTTP 模式浏览器访问监听地址；TCP 模式客户端连明文端口，gRPC 加 ALPN=h2。",
+		"  · 监听地址冲突会在启动时报错；端口 0 表示随机端口。",
+	}
+	if path := mtls.DefaultLogPath(); path != "" {
+		lines = append(lines, "  · 运行日志写入下面的文件，不打印到界面：", "    "+path)
+	}
+	for i, line := range lines {
+		lines[i] = truncate(line, m.width)
+	}
+	return dimStyle.Render(strings.Join(lines, "\n"))
 }
 
 func forwardName(fw mtls.ForwardStatus) string {

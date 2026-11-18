@@ -310,13 +310,16 @@ mtlsproxy -inspect -cert client.crt -key client.key -ca ca.crt
 | `↑` `k` / `↓` `j` | 移动光标 |
 | `g` / `home`、`G` / `end` | 跳到首/末 |
 | `a` | 新增转发配置，进入表单 |
-| `space` / `enter` | 启动或停止当前转发 |
+| `enter` / `e` | 编辑当前转发配置 |
+| `space` | 启动或停止当前转发 |
 | `d` / `delete` | 删除当前转发（运行中会先停止），需确认 |
 | `r` | 刷新状态 |
 | `?` | 展开/收起帮助 |
 | `q` / `ctrl+c` | 退出；有运行中的转发时需确认 |
 
 表单内 `tab` / `shift+tab` 切换字段，`←→` / 空格 切换选项或勾选，`ctrl+o` 为当前证书/私钥/CA 字段选择文件（也可用表单底部按钮），`ctrl+s` 添加配置，`esc` 取消。
+
+终端控制台的运行日志写到系统缓存目录下的 `mtlsproxy/mtlsproxy.log`（macOS 为 `~/Library/Caches/mtlsproxy/`，Linux 为 `~/.cache/mtlsproxy/`），不会打印到终端把界面冲乱；日志超过 5MB 时会在下次启动时清空。
 
 ### notifytool (MCP Server)
 
